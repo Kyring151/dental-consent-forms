@@ -650,16 +650,9 @@ function flowHtml(items) {
   return html;
 }
 
-function renderDoc(tpl) {
-  const sections = collectDocData();
-  if (!sections.length) {
-    $doc.innerHTML = '<div class="sheet"><p style="padding:30mm;text-align:center">请至少勾选一条条款</p></div>';
-    return;
-  }
-
+/* 把勾选的章节组织为线性块（h2/meta 占位 + 每节 h3 + li + sign + foot） */
+function buildItems(tpl, sections) {
   const footText = `模板 ${tpl.version} ・ 依据 2024–2025 年公开指南与专家共识整理，仅供本机构内部参考，正式使用前请由医务负责人审核`;
-
-  // 1) 线性块
   const items = [{ kind: 'h2' }, { kind: 'meta' }];
   sections.forEach((sec, i) => {
     let title = sec.title;
@@ -669,14 +662,45 @@ function renderDoc(tpl) {
     sec.clauses.forEach((c, n) => items.push({ kind: 'li', olKey: i, row: c.row, seq: n + 1, key: !!c.key, text: c.text, style: c.style, html: c.html }));
   });
   items.push({ kind: 'sign' }, { kind: 'foot', text: footText });
+  return items;
+}
 
+/* 单张纸的 HTML（连续预览与导出分页共用）；pi===0 带页眉，total>1 带页脚页码 */
+function sheetHtml(pgItems, pi, total, fontStyle) {
+  let out = `<div class="sheet" style="${fontStyle}">`;
+  if (pi === 0) {
+    out += `<h2>${escapeHtml(activeTpl.docTitle)}</h2><div class="title-rule"></div>`;
+    if (logoData) out += `<img class="doc-logo" src="${logoData}" alt="" onerror="this.remove()">`;
+    out += metaGridHtml();
+  }
+  out += flowHtml(pgItems);
+  if (total > 1) {
+    out += `<div class="page-mark">第 <span class="pm-num">${pi + 1}</span> 页` +
+           `<span class="pm-dot">◆</span>共 <span class="pm-num">${total}</span> 页</div>`;
+  }
+  return out + '</div>';
+}
+
+/* 预览 = 连续长卷：不切页、不裁剪，空格与回车自由排版（white-space: pre-wrap） */
+function renderDoc(tpl) {
+  const sections = collectDocData();
+  if (!sections.length) {
+    $doc.innerHTML = '<div class="sheet"><p style="padding:30mm;text-align:center">请至少勾选一条条款</p></div>';
+    return;
+  }
+  const items = buildItems(tpl, sections);
   const fontStyle = `font-size:${fontCfg.size}px;color:${fontCfg.color};`;
+  $doc.innerHTML = sheetHtml(items, 0, 1, fontStyle);
+}
 
-  // 2) 测量
+/* 物理分页（仅导出 PDF 用）：量尺测高 → 297mm 贪心分页 → 每页一个条目数组。
+   预览已改为连续长卷，分页规则只约束导出的纸质版式 */
+function paginateItems(items, fontStyle) {
+  // 1) 测量
   const meas = document.createElement('div');
   meas.className = 'sheet measurer';
   meas.style.cssText = `position:absolute;left:-99999px;top:0;visibility:hidden;${fontStyle}`;
-  meas.innerHTML = `<h2>${escapeHtml(tpl.docTitle)}</h2><div class="title-rule"></div>` + metaGridHtml() + flowHtml(items);
+  meas.innerHTML = `<h2>${escapeHtml(activeTpl.docTitle)}</h2><div class="title-rule"></div>` + metaGridHtml() + flowHtml(items);
   document.body.appendChild(meas);
 
   const cs = getComputedStyle(meas);
@@ -722,71 +746,44 @@ function renderDoc(tpl) {
   probe.remove();
   meas.remove();
 
-  // 3) 分页
-  let pages, heightsUsed = ok;
-  if (heightsUsed) {
-    const TOL = 8; // 安全余量（px），宁可早翻页也不挤爆
-    const secTitle = {};
-    items.forEach(it => { if (it.kind === 'h3') secTitle[it.olKey] = it.title; });
+  // 2) 分页（测量失败兜底：整卷一页）
+  if (!ok) return [items];
 
-    pages = [[]];
-    let pg = [], curH = 0;
-    const headerOf = key => x => (x.kind === 'h3' || x.kind === 'h3cont') && x.olKey === key;
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      /* h3 与其首条 li 视为一个整体：都放不下就先翻页，避免「标题孤立页底、内容跑下一页」 */
-      if (it.kind === 'h3' && i + 1 < items.length &&
-          items[i + 1].kind === 'li' && items[i + 1].olKey === it.olKey) {
-        if (pg.length > 0 && curH + heights[i] + heights[i + 1] > innerH - TOL) {
-          pages.push(pg); pg = []; curH = 0;
-        }
-      }
-      if (it.kind === 'li') {
-        /* 先按「本页是否已有该节标题」决定翻页时机，再在（可能全新的）页面上补标题 —
-           顺序不能反：先补标题再翻页会把标题插到条款后面 */
-        const need = pg.some(headerOf(it.olKey)) ? 0 : contH;
-        if (pg.length > 0 && curH + need + heights[i] > innerH - TOL) {
-          pages.push(pg); pg = []; curH = 0;
-        }
-        if (!pg.some(headerOf(it.olKey))) {
-          pg.push({ kind: 'h3cont', title: secTitle[it.olKey] + '（续）', olKey: it.olKey });
-          curH += contH;
-        }
-      } else if (pg.length > 0 && curH + heights[i] > innerH - TOL) {
+  const TOL = 8; // 安全余量（px），宁可早翻页也不挤爆
+  const secTitle = {};
+  items.forEach(it => { if (it.kind === 'h3') secTitle[it.olKey] = it.title; });
+
+  const pages = [];
+  let pg = [], curH = 0;
+  const headerOf = key => x => (x.kind === 'h3' || x.kind === 'h3cont') && x.olKey === key;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    /* h3 与其首条 li 视为一个整体：都放不下就先翻页，避免「标题孤立页底、内容跑下一页」 */
+    if (it.kind === 'h3' && i + 1 < items.length &&
+        items[i + 1].kind === 'li' && items[i + 1].olKey === it.olKey) {
+      if (pg.length > 0 && curH + heights[i] + heights[i + 1] > innerH - TOL) {
         pages.push(pg); pg = []; curH = 0;
       }
-      pg.push(it); curH += heights[i];
-      if (heights[i] > innerH - TOL) { pages.push(pg); pg = []; curH = 0; }
     }
-    if (pg.length) pages.push(pg);
-    pages = pages.filter(p => p.length);
+    if (it.kind === 'li') {
+      /* 先按「本页是否已有该节标题」决定翻页时机，再在（可能全新的）页面上补标题 —
+         顺序不能反：先补标题再翻页会把标题插到条款后面 */
+      const need = pg.some(headerOf(it.olKey)) ? 0 : contH;
+      if (pg.length > 0 && curH + need + heights[i] > innerH - TOL) {
+        pages.push(pg); pg = []; curH = 0;
+      }
+      if (!pg.some(headerOf(it.olKey))) {
+        pg.push({ kind: 'h3cont', title: secTitle[it.olKey] + '（续）', olKey: it.olKey });
+        curH += contH;
+      }
+    } else if (pg.length > 0 && curH + heights[i] > innerH - TOL) {
+      pages.push(pg); pg = []; curH = 0;
+    }
+    pg.push(it); curH += heights[i];
+    if (heights[i] > innerH - TOL) { pages.push(pg); pg = []; curH = 0; }
   }
-
-  // 4) 渲染：每页一张白纸
-  if (!heightsUsed || pages.length === 0) {
-    // 测量失败兜底：整卷一张
-    $doc.innerHTML = `<div class="sheet" style="${fontStyle}">${`<h2>${escapeHtml(tpl.docTitle)}</h2><div class="title-rule"></div>` +
-      (logoData ? `<img class="doc-logo" src="${logoData}" alt="" onerror="this.remove()">` : '') + metaGridHtml() + flowHtml(items)}</div>`;
-    return;
-  }
-
-  const total = pages.length;
-  let out = '';
-  pages.forEach((pgItems, pi) => {
-    out += `<div class="sheet" style="${fontStyle}">`;
-    if (pi === 0) {
-      out += `<h2>${escapeHtml(tpl.docTitle)}</h2><div class="title-rule"></div>`;
-      if (logoData) out += `<img class="doc-logo" src="${logoData}" alt="" onerror="this.remove()">`;
-      out += metaGridHtml();
-    }
-    out += flowHtml(pgItems);
-    if (total > 1) {
-      out += `<div class="page-mark">第 <span class="pm-num">${pi + 1}</span> 页` +
-             `<span class="pm-dot">◆</span>共 <span class="pm-num">${total}</span> 页</div>`;
-    }
-    out += '</div>';
-  });
-  $doc.innerHTML = out;
+  if (pg.length) pages.push(pg);
+  return pages.filter(p => p.length);
 }
 
 function escapeHtml(s) {
@@ -986,12 +983,25 @@ $btnPdf.onclick = async () => {
   const old = $btnPdf.textContent;
   $btnPdf.disabled = true;
   $btnPdf.textContent = '⏳ 正在生成…';
-  /* 逐张纸渲染：每张 .sheet 本身就是一张 A4（210×297mm），
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  /* 预览是连续长卷，导出时先离屏做物理分页（paginateItems），每张 .sheet 即一张 A4，
      直接整页贴入 PDF，彻底避免"整卷切片"导致的错位与空白页 */
-  const marks = [...$doc.querySelectorAll('.page-mark, .col-handle')];
-  marks.forEach(m => m.style.visibility = 'hidden');
+  const sections = collectDocData();
+  if (!sections.length) {
+    $btnPdf.disabled = false; $btnPdf.textContent = old;
+    toast('请先至少勾选一条条款', true); return;
+  }
+  const items = buildItems(tpl, sections);
+  const fontStyle = `font-size:${fontCfg.size}px;color:${fontCfg.color};`;
+  const pages = paginateItems(items, fontStyle);
+  const wrap = document.createElement('div');
+  wrap.className = 'pdf-doc';
+  wrap.style.cssText = 'position:absolute;left:-99999px;top:0;';
+  const total = pages.length;
+  wrap.innerHTML = pages.map((pg, pi) => sheetHtml(pg, pi, total, fontStyle)).join('');
+  document.body.appendChild(wrap);
   try {
-    const sheets = [...$doc.querySelectorAll('.sheet')];
+    const sheets = [...wrap.querySelectorAll('.sheet')];
     const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
     for (let i = 0; i < sheets.length; i++) {
       const canvas = await html2canvas(sheets[i], { scale: 2, backgroundColor: '#ffffff', useCORS: true });
@@ -1005,7 +1015,7 @@ $btnPdf.onclick = async () => {
     console.error(e);
     toast('导出失败：' + (e.message || e), true);
   } finally {
-    marks.forEach(m => m.style.visibility = '');
+    wrap.remove();
     $btnPdf.disabled = false;
     $btnPdf.textContent = old;
   }

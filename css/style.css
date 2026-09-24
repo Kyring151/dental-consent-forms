@@ -192,16 +192,17 @@ body {
 .add-clause.danger { color: var(--danger); border-color: #e5c1c1; }
 .add-clause.danger:hover { border-color: var(--danger); background: #fbeaea; }
 
-/* ---------- A4 预览：.doc 为纸张容器，.sheet 为每张白纸 ---------- */
+/* ---------- A4 预览：.doc 为纸张容器，.sheet 为白纸 ----------
+   预览 = 连续长卷（高度自适应，不切页不裁剪）；white-space: pre-wrap 保住空格与回车排版 */
 .preview-wrap { flex: 1; overflow: auto; padding: 6px 10px 24px; display: flex; justify-content: center; align-items: flex-start; }
 .doc { display: flex; flex-direction: column; gap: 22px; padding: 4px 2px 10px; }
 .sheet {
-  background: #fff; width: 210mm; height: 297mm;
+  background: #fff; width: 210mm; min-height: 297mm;
   padding: 20mm 20mm 24mm; border-radius: 3px;
-  position: relative; overflow: hidden; flex-shrink: 0;
+  position: relative; overflow: visible; flex-shrink: 0;
   box-shadow: 0 6px 28px rgba(22, 64, 84, .18), 0 0 0 1px rgba(22, 64, 84, .05);
   font-family: "SimSun", "Songti SC", serif; font-size: 14px; line-height: 2.0;
-  color: #111;
+  color: #111; white-space: pre-wrap;
 }
 .doc-logo {
   position: absolute; top: 8mm; left: 14mm;
@@ -312,14 +313,14 @@ body {
 .sheet .sign .row { display: flex; align-items: flex-end; margin-bottom: 6mm; gap: 2mm; }
 .sheet .sign .row .line { border-bottom: 1px solid #111; display: inline-block; height: 6mm; }
 .sheet .foot-note {
-  position: absolute; bottom: 9mm; left: 20mm; right: 20mm;
+  margin-top: 8mm;
   font-size: 9.5px; color: #555; line-height: 1.6;
 }
 
-/* 分页页脚：贴每张纸底部的小字 */
+/* 分页页脚：只在导出/打印的固定纸张上出现（连续预览不显示） */
 .page-mark {
   position: absolute; bottom: 12.5mm; left: 20mm; right: 20mm;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
+  display: none; align-items: center; justify-content: center; gap: 8px;
   font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 9.5px; color: #9aa5b1; letter-spacing: 2.5px;
   pointer-events: none; user-select: none; white-space: nowrap;
@@ -332,9 +333,10 @@ body {
 .page-mark .pm-num { color: #7c8fa0; font-weight: 600; }
 .page-mark .pm-dot { color: #b8925e; font-size: 7px; }
 
-/* PDF 导出模式：纸张无缝堆叠并按张分页 */
-.pdf-mode { gap: 0; }
-.pdf-mode .sheet { margin: 0 auto; page-break-after: always; box-shadow: none; }
+/* PDF 导出：离屏容器 .pdf-doc 内每张 .sheet 恢复固定 A4 高并裁剪 */
+.pdf-doc .sheet { height: 297mm; min-height: 0; overflow: hidden; margin: 0 auto; page-break-after: always; box-shadow: none; }
+.pdf-doc .page-mark { display: flex; }
+.pdf-doc .foot-note { position: absolute; bottom: 9mm; left: 20mm; right: 20mm; margin-top: 0; }
 
 /* 编辑器：模板依据资料 */
 .based-on {
@@ -375,14 +377,16 @@ body {
   text-align: center; backdrop-filter: blur(6px);
 }
 
-/* ---------- 打印 ---------- */
+/* ---------- 打印：连续长卷由浏览器自然分页 ---------- */
 @media print {
   body { overflow: visible; height: auto; background: #fff; }
   .topbar, .panel, .foot { display: none !important; }
   .layout { display: block; padding: 0; }
   .preview-wrap { padding: 0; overflow: visible; display: block; }
   .doc { gap: 0; padding: 0; }
-  .sheet { box-shadow: none; margin: 0; page-break-after: always; }
+  .sheet { box-shadow: none; margin: 0; min-height: 0; page-break-after: auto; }
+  .sheet h3, .sheet ol.clauses li, .sheet .sign .row { page-break-inside: avoid; }
+  .sheet ol.clauses li[data-row]:focus { outline: none; }
   .page-mark, .col-handle { display: none !important; }
   @page { size: A4; margin: 0; }
 }
