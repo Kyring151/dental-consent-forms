@@ -397,7 +397,7 @@ function addClauseRow(secEl, tpl, si, ci, c) {
   row.appendChild(cb);
   row.appendChild(text);
 
-  /* 逐句字体：A 按钮弹出小面板（字号 / 颜色 / 清除） */
+  /* 逐句字体：A 按钮弹出小面板（字号 / 颜色 / 回退箭头） */
   const getStyle = () => { try { return JSON.parse(row.dataset.style || 'null'); } catch { return null; } };
   const fontBtn = document.createElement('button');
   fontBtn.className = 'fbtn';
@@ -411,7 +411,8 @@ function addClauseRow(secEl, tpl, si, ci, c) {
   const colorInput = document.createElement('input');
   colorInput.type = 'color';
   const clearBtn = document.createElement('button');
-  clearBtn.textContent = '清除';
+  clearBtn.textContent = '↺';
+  clearBtn.title = '清除本条字号 / 颜色设置';
   const syncPanel = () => {
     const st = getStyle();
     sizeInput.value = st && st.size ? st.size : '';
