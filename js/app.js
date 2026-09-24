@@ -102,7 +102,10 @@ function collectLayout() {
       line: Math.max(0, parseInt(row.querySelector('.ls-line').value) || 0)
     });
   });
-  return { meta, sign };
+  // 信息栏独立字号（px），与正文字号互不影响
+  const mfInput = document.querySelector('.ls-meta-font input');
+  const metaFont = Math.min(18, Math.max(9, parseInt(mfInput && mfInput.value) || 12));
+  return { meta, sign, metaFont };
 }
 
 function buildLayoutSettings(tpl) {
@@ -113,6 +116,7 @@ function buildLayoutSettings(tpl) {
   const sign = (draft && draft.layout && Array.isArray(draft.layout.sign) && draft.layout.sign.length)
     ? draft.layout.sign
     : SIGN_BLOCK.map(s => ({ label: s.label, on: true, line: s.line * 5 })); // 换算为 mm
+  const metaFontSaved = (draft && draft.layout && draft.layout.metaFont) || 12;
 
   const wrap = document.createElement('div');
   wrap.className = 'layout-settings';
@@ -165,6 +169,22 @@ function buildLayoutSettings(tpl) {
     saveDraft(); renderDoc(activeTpl);
   };
   g1.appendChild(metaBox); g1.appendChild(addMeta);
+
+  /* 信息栏独立字号：只影响表头患者信息栏，不动正文字号（默认 12px） */
+  const mfRow = document.createElement('div');
+  mfRow.className = 'ls-row ls-meta-font';
+  mfRow.innerHTML = '<span style="font-size:12px;color:var(--muted)">信息栏字号</span>';
+  const mfInput2 = document.createElement('input');
+  mfInput2.type = 'number'; mfInput2.min = 9; mfInput2.max = 18; mfInput2.value = metaFontSaved;
+  mfInput2.className = 'ls-line'; mfInput2.title = '信息栏标签字号（px），与正文「全文排版」字号互不影响';
+  mfInput2.onchange = () => {
+    mfInput2.value = Math.min(18, Math.max(9, parseInt(mfInput2.value) || 12));
+    saveDraft(); renderDoc(activeTpl);
+  };
+  const mfUnit = document.createElement('span');
+  mfUnit.className = 'ls-unit'; mfUnit.textContent = 'px';
+  mfRow.appendChild(mfInput2); mfRow.appendChild(mfUnit);
+  g1.appendChild(mfRow);
 
   const g2 = document.createElement('div');
   g2.className = 'ls-group';
@@ -441,10 +461,12 @@ function collectDocData() {
 
 /* 患者信息栏：按启用字段流动分排（每排 4 格），列宽支持预览中拖拽调整 */
 function metaGridHtml() {
-  const fields = collectLayout().meta.filter(m => m.on);
+  const layout = collectLayout();
+  const fields = layout.meta.filter(m => m.on);
   if (!fields.length) return '';
+  const mf = layout.metaFont || 12;
   const cell = (f, withHandle) =>
-    `<div class="mcell" style="width:${f._pw}%"><span class="mlbl">${escapeHtml(f.label)}</span>` +
+    `<div class="mcell" style="width:${f._pw}%"><span class="mlbl" style="font-size:${mf}px">${escapeHtml(f.label)}</span>` +
     `<span class="mline"></span>${withHandle ? '<div class="col-handle"></div>' : ''}</div>`;
   let html = '<div class="meta-grid">';
   for (let i = 0; i < fields.length; i += 4) {
