@@ -213,7 +213,43 @@ body {
   border-right: 1px solid #111; min-height: 12mm; min-width: 14mm;
 }
 .meta-grid .mcell:last-child { border-right: none; }
-.meta-grid .mlbl { font-size: 10.5px; color: #333; white-space: nowrap; margin-right: 2mm; letter-spacing: 1px; }
+.meta-grid .mlbl { font-size: 0.72em; color: #333; white-space: nowrap; margin-right: 2mm; letter-spacing: 1px; }
+
+/* 逐句字体面板 + 回退按钮 */
+.clause .fbtn {
+  flex-shrink: 0; border: 1px solid var(--line); background: #fff;
+  width: 22px; height: 22px; border-radius: 5px; cursor: pointer;
+  font-size: 12px; font-weight: 700; color: var(--muted); line-height: 1; margin-top: 2px;
+}
+.clause .fbtn:hover { color: var(--teal); border-color: var(--teal); }
+.clause .fbtn.on { color: #fff; background: var(--teal); border-color: var(--teal); }
+.font-panel {
+  position: absolute; right: 8px; top: 34px; z-index: 20;
+  display: flex; align-items: center; gap: 5px;
+  background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: var(--shadow-md); padding: 6px 8px;
+}
+.font-panel[hidden] { display: none; }
+.font-panel input[type=number] {
+  width: 46px; padding: 2px 4px; font-size: 12px; text-align: right;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+.font-panel input[type=color] {
+  width: 30px; height: 24px; padding: 1px; border: 1px solid var(--line);
+  border-radius: 5px; background: #fff; cursor: pointer;
+}
+.font-panel button {
+  font-size: 11px; border: none; background: none; color: var(--muted);
+  cursor: pointer; padding: 2px 4px;
+}
+.font-panel button:hover { color: var(--danger); }
+.clause { position: relative; }
+.clause .undo {
+  flex-shrink: 0; border: none; background: none; color: var(--teal);
+  cursor: pointer; font-size: 14px; padding: 1px 3px; visibility: hidden; margin-top: 2px;
+}
+.clause:hover .undo { visibility: visible; }
+.clause .undo:hover { transform: rotate(-30deg); }
 .meta-grid .mline { flex: 1; border-bottom: 1px solid #666; height: 5.5mm; }
 
 /* 列宽拖拽手柄：悬停边线时出现 */

@@ -70,8 +70,10 @@ function saveDraft() {
     const sec = el.dataset.sec, idx = el.dataset.idx;
     const text = el.querySelector('.text').textContent;
     const on = el.querySelector('input[type=checkbox]').checked;
-    if (!on || el.dataset.custom === '1' || text !== el.dataset.orig) {
-      state.edits[`${sec}:${idx}`] = { on, text };
+    let style = null;
+    try { style = JSON.parse(el.dataset.style || 'null'); } catch { style = null; }
+    if (!on || el.dataset.custom === '1' || text !== el.dataset.orig || style) {
+      state.edits[`${sec}:${idx}`] = { on, text, style };
     }
     if (el.dataset.custom === '1') {
       (state.customs[sec] = state.customs[sec] || []).push({ idx, text });
@@ -215,7 +217,7 @@ function applyDraft(tpl) {
   tpl.sections.forEach((sec, si) => {
     sec.clauses.forEach((c, ci) => {
       const d = draft && draft.edits[`${si}:${ci}`];
-      if (d) { c._on = d.on; c._text = d.text; }
+      if (d) { c._on = d.on; c._text = d.text; c._style = d.style; }
       else if (c.opt) c._on = false;   // 可选条款默认不勾选
     });
     if (draft && draft.customs && draft.customs[si]) {
@@ -297,6 +299,7 @@ function addClauseRow(secEl, tpl, si, ci, c) {
   row.dataset.sec = si; row.dataset.idx = ci;
   if (c.custom) row.dataset.custom = '1';
   row.dataset.orig = c.text;
+  if (c._style) row.dataset.style = JSON.stringify(c._style);
 
   const cb = document.createElement('input');
   cb.type = 'checkbox';
@@ -320,6 +323,65 @@ function addClauseRow(secEl, tpl, si, ci, c) {
 
   row.appendChild(cb);
   row.appendChild(text);
+
+  /* 逐句字体：A 按钮弹出小面板（字号 / 颜色 / 清除） */
+  const getStyle = () => { try { return JSON.parse(row.dataset.style || 'null'); } catch { return null; } };
+  const fontBtn = document.createElement('button');
+  fontBtn.className = 'fbtn';
+  fontBtn.textContent = 'A';
+  fontBtn.title = '本条字体设置';
+  const panel = document.createElement('div');
+  panel.className = 'font-panel';
+  panel.hidden = true;
+  const sizeInput = document.createElement('input');
+  sizeInput.type = 'number'; sizeInput.min = 10; sizeInput.max = 30; sizeInput.placeholder = '字号';
+  const colorInput = document.createElement('input');
+  colorInput.type = 'color';
+  const clearBtn = document.createElement('button');
+  clearBtn.textContent = '清除';
+  const syncPanel = () => {
+    const st = getStyle();
+    sizeInput.value = st && st.size ? st.size : '';
+    if (st && st.color) colorInput.value = st.color;
+    fontBtn.classList.toggle('on', !!st);
+  };
+  const applyStyle = () => {
+    const size = parseInt(sizeInput.value) || 0;
+    const color = colorInput.value;
+    const st = (size || color) ? { ...(size ? { size } : {}), ...(color ? { color } : {}) } : null;
+    if (st) row.dataset.style = JSON.stringify(st); else delete row.dataset.style;
+    syncPanel(); saveDraft(); renderDoc(tpl);
+  };
+  sizeInput.onchange = applyStyle;
+  colorInput.oninput = applyStyle;
+  clearBtn.onclick = () => { sizeInput.value = ''; applyStyle(); };
+  panel.appendChild(sizeInput); panel.appendChild(colorInput); panel.appendChild(clearBtn);
+  fontBtn.onclick = (e) => { e.stopPropagation(); syncPanel(); panel.hidden = !panel.hidden; };
+  row.appendChild(fontBtn);
+  row.appendChild(panel);
+  syncPanel();
+
+  /* 回退：恢复模板默认文字 + 清除本条字体设置 */
+  const undoBtn = document.createElement('button');
+  undoBtn.className = 'undo';
+  undoBtn.textContent = '↺';
+  undoBtn.title = '恢复该条款为模板默认';
+  undoBtn.onclick = () => {
+    if (!confirm('恢复该条款为模板默认文字，并清除其字体设置？')) return;
+    text.textContent = c.text;
+    delete row.dataset.style;
+    delete c._text; delete c._style;
+    syncPanel(); undoBtn.style.visibility = 'hidden';
+    saveDraft(); renderDoc(tpl);
+  };
+  row.appendChild(undoBtn);
+  const syncUndo = () => {
+    undoBtn.style.visibility =
+      (text.textContent !== c.text || row.dataset.style) ? 'visible' : 'hidden';
+  };
+  text.addEventListener('input', syncUndo);
+  syncUndo();
+
   if (c.key) {
     const b = document.createElement('span');
     b.className = 'key-badge'; b.textContent = '关键';
@@ -348,7 +410,9 @@ function collectDocData() {
     secEl.querySelectorAll('.clause').forEach((row, ri) => {
       const on = row.querySelector('input[type=checkbox]').checked;
       if (!on) return;
-      clauses.push({ text: row.querySelector('.text').textContent, key: row.classList.contains('key'), row: ri });
+      let style = null;
+      try { style = JSON.parse(row.dataset.style || 'null'); } catch { style = null; }
+      clauses.push({ text: row.querySelector('.text').textContent, key: row.classList.contains('key'), row: ri, style });
     });
     if (clauses.length) sections.push({ title, clauses, shared: secEl.dataset.shared === '1' });
   });
@@ -449,7 +513,8 @@ function flowHtml(items) {
       for (let k = i; k < j; k++) {
         const c = items[k];
         const body = escapeHtml(c.text).replace(/\n/g, '<br>');
-        html += `<li${c.key ? ' class="key"' : ''} data-sec="${c.olKey}" data-row="${c.row}" contenteditable="true">${body}</li>`;
+        const st = c.style ? ` style="${c.style.size ? `font-size:${c.style.size}px;` : ''}${c.style.color ? `color:${c.style.color};` : ''}"` : '';
+        html += `<li${c.key ? ' class="key"' : ''}${st} data-sec="${c.olKey}" data-row="${c.row}" contenteditable="true">${body}</li>`;
       }
       html += '</ol>';
       i = j;
@@ -481,7 +546,7 @@ function renderDoc(tpl) {
   sections.forEach((sec, i) => {
     const title = sec.shared ? `${CN_NUM[i]}、患者声明` : sec.title;
     items.push({ kind: 'h3', title, olKey: i });
-    sec.clauses.forEach((c, n) => items.push({ kind: 'li', olKey: i, row: c.row, seq: n + 1, key: !!c.key, text: c.text }));
+    sec.clauses.forEach((c, n) => items.push({ kind: 'li', olKey: i, row: c.row, seq: n + 1, key: !!c.key, text: c.text, style: c.style }));
   });
   items.push({ kind: 'sign' }, { kind: 'foot', text: footText });
 
