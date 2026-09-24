@@ -274,18 +274,7 @@ function buildLayoutSettings(tpl) {
     toast('已恢复内置版式');
   };
 
-  const resetBtn = document.createElement('button');
-  resetBtn.className = 'add-clause danger';
-  resetBtn.textContent = '重置本模板';
-  resetBtn.title = '清除本模板所有改动，回到预制初始状态';
-  resetBtn.onclick = () => {
-    if (!confirm('将「' + tpl.name + '」恢复为初始预制状态：\n・清除所有条款勾选 / 改字 / 自定义条款\n・清除字体设置与行内格式\n・信息栏、签字区、信息栏字号恢复默认\n\n此操作不可撤销，确定重置？')) return;
-    localStorage.removeItem(draftKey(tpl.id));
-    selectTemplate(tpl.id);
-    toast('已重置为模板初始状态');
-  };
-
-  brow.appendChild(saveDefaultBtn); brow.appendChild(restoreDefaultBtn); brow.appendChild(resetBtn);
+  brow.appendChild(saveDefaultBtn); brow.appendChild(restoreDefaultBtn);
   g4.appendChild(brow);
 
   wrap.appendChild(g1); wrap.appendChild(g2); wrap.appendChild(g3); wrap.appendChild(g4);
@@ -604,7 +593,7 @@ function flowHtml(items) {
       html += `<ol class="clauses" start="${it.seq}">`;
       for (let k = i; k < j; k++) {
         const c = items[k];
-        const body = c.html ? c.html : escapeHtml(c.text).replace(/\n/g, '<br>');
+        const body = c.html ? stripInlineFontSize(c.html) : escapeHtml(c.text).replace(/\n/g, '<br>');
         const st = c.style ? ` style="${c.style.size ? `font-size:${c.style.size}px;` : ''}${c.style.color ? `color:${c.style.color};` : ''}"` : '';
         html += `<li${c.key ? ' class="key"' : ''}${st} data-sec="${c.olKey}" data-row="${c.row}" contenteditable="true">${body}</li>`;
       }
@@ -706,17 +695,26 @@ function renderDoc(tpl) {
     const headerOf = key => x => (x.kind === 'h3' || x.kind === 'h3cont') && x.olKey === key;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      let cont = null;
-      if (it.kind === 'li' && !pg.some(headerOf(it.olKey))) {
-        cont = { kind: 'h3cont', title: secTitle[it.olKey] + '（续）', olKey: it.olKey };
-      }
-      if (pg.length > 0 && curH + (cont ? contH : 0) + heights[i] > innerH - TOL) {
-        pages.push(pg); pg = []; curH = 0;
-        if (cont && !pg.some(headerOf(it.olKey))) {
-          pg.push(cont); curH += contH;
+      /* h3 与其首条 li 视为一个整体：都放不下就先翻页，避免「标题孤立页底、内容跑下一页」 */
+      if (it.kind === 'h3' && i + 1 < items.length &&
+          items[i + 1].kind === 'li' && items[i + 1].olKey === it.olKey) {
+        if (pg.length > 0 && curH + heights[i] + heights[i + 1] > innerH - TOL) {
+          pages.push(pg); pg = []; curH = 0;
         }
-      } else if (cont) {
-        pg.push(cont); curH += contH;
+      }
+      if (it.kind === 'li') {
+        /* 先按「本页是否已有该节标题」决定翻页时机，再在（可能全新的）页面上补标题 —
+           顺序不能反：先补标题再翻页会把标题插到条款后面 */
+        const need = pg.some(headerOf(it.olKey)) ? 0 : contH;
+        if (pg.length > 0 && curH + need + heights[i] > innerH - TOL) {
+          pages.push(pg); pg = []; curH = 0;
+        }
+        if (!pg.some(headerOf(it.olKey))) {
+          pg.push({ kind: 'h3cont', title: secTitle[it.olKey] + '（续）', olKey: it.olKey });
+          curH += contH;
+        }
+      } else if (pg.length > 0 && curH + heights[i] > innerH - TOL) {
+        pages.push(pg); pg = []; curH = 0;
       }
       pg.push(it); curH += heights[i];
       if (heights[i] > innerH - TOL) { pages.push(pg); pg = []; curH = 0; }
@@ -764,9 +762,10 @@ $doc.addEventListener('keydown', e => {
   }
 });
 
-/* 行内格式净化：只保留 b/i/u/br 和带白名单样式的 span，其余剥壳或丢弃 */
+/* 行内格式净化：只保留 b/i/u/br 和带白名单样式的 span，其余剥壳或丢弃
+ * 注意：span 一律不收 font-size —— 粘贴自 Word/网页的残留小字号会让该句脱离全文排版，
+ * 统一由 li 级 style.size（A 面板）控制逐句字号；div/p 剥壳时补 <br> 保住段落换行 */
 function sanitizeHtml(html) {
-  const SIZE = { 1: '10px', 2: '13px', 3: '16px', 4: '18px', 5: '24px', 6: '32px', 7: '48px' };
   const d = new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html');
   const proc = el => {
     let out = '';
@@ -781,23 +780,28 @@ function sanitizeHtml(html) {
       else if (t === 'I' || t === 'EM') out += `<i>${inner}</i>`;
       else if (t === 'U') out += `<u>${inner}</u>`;
       else if (t === 'BR') out += '<br>';
+      else if (t === 'DIV' || t === 'P') out += inner + '<br>';   // 段落剥壳但保留换行
       else if (t === 'SPAN') {
         const st = [];
         if (n.style.fontWeight && n.style.fontWeight !== 'normal') st.push('font-weight:' + n.style.fontWeight);
         if (n.style.fontStyle && n.style.fontStyle !== 'normal') st.push('font-style:' + n.style.fontStyle);
         if (n.style.color) st.push('color:' + n.style.color);
-        if (n.style.fontSize) st.push('font-size:' + n.style.fontSize);
         out += st.length ? `<span style="${st.join(';')}">${inner}</span>` : inner;
-      } else if (t === 'FONT') {   // 兼容未开 styleWithCSS 的旧格式
+      } else if (t === 'FONT') {   // 兼容未开 styleWithCSS 的旧格式（只留颜色，字号一律丢弃）
         const st = [];
         if (n.getAttribute('color')) st.push('color:' + n.getAttribute('color'));
-        if (n.size) st.push('font-size:' + (SIZE[n.size] || '16px'));
         out += st.length ? `<span style="${st.join(';')}">${inner}</span>` : inner;
-      } else out += inner;         // div/p/其他：剥壳保留文字
+      } else out += inner;         // 其他标签：剥壳保留文字
     });
     return out;
   };
-  return proc(d.body.firstChild);
+  /* 3 个及以上连续 <br> 收敛为 2 个，避免粘贴残留的空行撑乱版心 */
+  return proc(d.body.firstChild).replace(/(<br>){3,}/g, '<br><br>');
+}
+
+/* 渲染前兜底：剥掉历史草稿 html 里残留的 span 行内字号（旧版 sanitize 放过 font-size） */
+function stripInlineFontSize(html) {
+  return html.replace(/font-size\s*:[^;"']+;?/gi, '');
 }
 
 /* 预览 li ↔ 编辑器同步（含行内格式） */
@@ -970,9 +974,11 @@ $btnPdf.onclick = async () => {
 
 $btnReset.onclick = () => {
   if (!currentId) return;
-  if (!confirm('放弃当前修改，恢复该模板默认条款？')) return;
+  const tplName = (TEMPLATES.find(t => t.id === currentId) || {}).name || '当前模板';
+  if (!confirm('将「' + tplName + '」一键重置为初始预制状态：\n・清除所有条款勾选 / 改字 / 自定义条款\n・清除字体设置与行内格式\n・信息栏、签字区、信息栏字号恢复默认\n\n此操作不可撤销，确定重置？')) return;
   localStorage.removeItem(draftKey(currentId));
   selectTemplate(currentId);
+  toast('已重置为模板初始状态');
 };
 
 /* ---------- 启动：默认选中第一个模板 ---------- */
