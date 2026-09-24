@@ -83,8 +83,9 @@ function saveDraft() {
     try { style = JSON.parse(el.dataset.style || 'null'); } catch { style = null; }
     const htmlRaw = el.dataset.html || '';
     const hasHtml = /<\w+[ >]/.test(htmlRaw);
-    if (!on || el.dataset.custom === '1' || text !== el.dataset.orig || style || hasHtml) {
-      state.edits[`${sec}:${idx}`] = { on, text, style, html: hasHtml ? htmlRaw : undefined };
+    const blanks = parseInt(el.dataset.blanks) || 0;   // 条款前空行数（预览中回车插行）
+    if (!on || el.dataset.custom === '1' || text !== el.dataset.orig || style || hasHtml || blanks > 0) {
+      state.edits[`${sec}:${idx}`] = { on, text, style, blanks: blanks || undefined, html: hasHtml ? htmlRaw : undefined };
     }
     if (el.dataset.custom === '1') {
       (state.customs[sec] = state.customs[sec] || []).push({ idx, text });
@@ -300,7 +301,7 @@ function applyDraft(tpl) {
     if (draft && draft.titles && draft.titles[si] != null) sec._title = draft.titles[si];
     sec.clauses.forEach((c, ci) => {
       const d = draft && draft.edits && draft.edits[`${si}:${ci}`];
-      if (d) { c._on = d.on; c._text = d.text; c._style = d.style; c._html = d.html; }
+      if (d) { c._on = d.on; c._text = d.text; c._style = d.style; c._html = d.html; c._blanks = d.blanks || 0; }
       else if (c.opt) c._on = false;   // 可选条款默认不勾选
     });
     if (draft && draft.customs && draft.customs[si]) {
@@ -405,6 +406,7 @@ function addClauseRow(secEl, tpl, si, ci, c) {
   row.dataset.orig = c.text;
   if (c._style) row.dataset.style = JSON.stringify(c._style);
   if (c._html) row.dataset.html = c._html;
+  if (c._blanks) row.dataset.blanks = c._blanks;
 
   const cb = document.createElement('input');
   cb.type = 'checkbox';
@@ -480,6 +482,7 @@ function addClauseRow(secEl, tpl, si, ci, c) {
     text.textContent = c.text;
     delete row.dataset.style;
     delete row.dataset.html;
+    delete row.dataset.blanks;
     delete c._text; delete c._style; delete c._html;
     syncPanel(); undoBtn.style.visibility = 'hidden';
     saveDraft(); renderDoc(tpl);
@@ -527,6 +530,7 @@ function collectDocData() {
         text: row.querySelector('.text').textContent,
         key: row.classList.contains('key'),
         row: ri, style,
+        blanks: parseInt(row.dataset.blanks) || 0,
         html: /<\w+[ >]/.test(row.dataset.html || '') ? row.dataset.html : null
       });
     });
@@ -618,21 +622,24 @@ function signHtml() {
   return html + '</div>';
 }
 
-/* li 连续同组时合并为 <ol start=原始序号>，保证跨页编号连续；
-   条款在预览中可直接编辑（contenteditable），回车换行以 \n 存回草稿 */
+/* li 连续同组渲染为一个 <ol>，序号手动生成（.num span，跨页随 seq 连续）：
+   条款前可带空行（blank li，不编号、不耗序号），预览中光标在序号前回车 = 整条下移一行 */
 function flowHtml(items) {
   let html = '', i = 0;
   while (i < items.length) {
     const it = items[i];
     if (it.kind === 'li') {
-      let j = i;
+      let j = i, n = it.seq;
       while (j < items.length && items[j].kind === 'li' && items[j].olKey === it.olKey) j++;
-      html += `<ol class="clauses" start="${it.seq}">`;
+      html += `<ol class="clauses">`;
       for (let k = i; k < j; k++) {
         const c = items[k];
+        for (let b = 0; b < (c.blanks || 0); b++)
+          html += '<li class="blank" contenteditable="false"></li>';
         const body = c.html ? stripInlineFontSize(c.html) : escapeHtml(c.text).replace(/\n/g, '<br>');
         const st = c.style ? ` style="${c.style.size ? `font-size:${c.style.size}px;` : ''}${c.style.color ? `color:${c.style.color};` : ''}"` : '';
-        html += `<li${c.key ? ' class="key"' : ''}${st} data-sec="${c.olKey}" data-row="${c.row}" contenteditable="true">${body}</li>`;
+        html += `<li${c.key ? ' class="key"' : ''}${st} data-sec="${c.olKey}" data-row="${c.row}" contenteditable="true"><span class="num" contenteditable="false">${n}.</span>${body}</li>`;
+        n++;
       }
       html += '</ol>';
       i = j;
@@ -659,7 +666,7 @@ function buildItems(tpl, sections) {
     /* 共用声明节模板原文不带编号，保持与常规节一致的自动编号（用户自带编号则不重复加） */
     if (sec.shared && !/^[一二三四五六七八九十]+、/.test(title)) title = `${CN_NUM[i]}、${title}`;
     items.push({ kind: 'h3', title, olKey: i });
-    sec.clauses.forEach((c, n) => items.push({ kind: 'li', olKey: i, row: c.row, seq: n + 1, key: !!c.key, text: c.text, style: c.style, html: c.html }));
+    sec.clauses.forEach((c, n) => items.push({ kind: 'li', olKey: i, row: c.row, seq: n + 1, key: !!c.key, text: c.text, style: c.style, html: c.html, blanks: c.blanks || 0 }));
   });
   items.push({ kind: 'sign' }, { kind: 'foot', text: footText });
   return items;
@@ -731,8 +738,16 @@ function paginateItems(items, fontStyle) {
         const lis = [...el.children];
         let cnt = 0;
         while (ex.start + cnt < items.length && items[ex.start + cnt].kind === 'li') cnt++;
-        if (lis.length !== cnt) { ok = false; break; }
-        for (let k = 0; k < cnt; k++) heights[ex.start + k] = lis[k].offsetHeight;
+        let need = 0;
+        for (let k = 0; k < cnt; k++) need += 1 + (items[ex.start + k].blanks || 0);
+        if (lis.length !== need) { ok = false; break; }
+        let p = 0;
+        for (let k = 0; k < cnt; k++) {
+          heights[ex.start + k] = lis[p].offsetHeight; p++;
+          for (let b = 0; b < (items[ex.start + k].blanks || 0); b++) {
+            heights[ex.start + k] += lis[p].offsetHeight; p++;
+          }
+        }
       } else if (ex.type === 'el') {
         heights[ex.index] = el.offsetHeight;
       }
@@ -790,10 +805,35 @@ function escapeHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/* 预览条款直编：回车在条款内换行（不拆分条款），输入实时同步回左侧草稿 */
+/* 预览条款直编：回车行为分两种 —
+   ・光标在本条最开头（序号之前 / 序号与正文之间）：序号+正文整体下移一行，
+     即在本条前插一个无编号空行；不触发重渲染，可连续回车插多行
+   ・其余位置：条款内换行（不拆分条款），以 \n 存回草稿 */
 $doc.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.target.closest && e.target.closest('li[data-row]')) {
-    e.preventDefault();
+  if (e.key !== 'Enter' || !e.target.closest) return;
+  const li = e.target.closest('li[data-row]');
+  if (!li) return;
+  e.preventDefault();
+  const sel = getSelection();
+  const num = li.querySelector('.num');
+  let atStart = false;
+  if (sel.rangeCount && sel.isCollapsed && num) {
+    const r = sel.getRangeAt(0);
+    const n = r.startContainer, o = r.startOffset;
+    if ((n === li && o === 0) || n === num) atStart = true;                            // 序号之前（或序号内）
+    else if (n === li && o === 1) atStart = true;                                      // 紧跟序号之后
+    else if (n.nodeType === 3 && o === 0 && n.previousSibling === num) atStart = true; // 正文首个字符之前
+  }
+  if (atStart) {
+    const blank = document.createElement('li');
+    blank.className = 'blank';
+    blank.contentEditable = 'false';
+    li.parentElement.insertBefore(blank, li);
+    const row = document.querySelector(
+      `#editor .clause[data-sec="${li.dataset.sec}"][data-idx="${li.dataset.row}"]`);
+    if (row) row.dataset.blanks = (parseInt(row.dataset.blanks) || 0) + 1;
+    saveDraft();
+  } else {
     document.execCommand('insertLineBreak');
   }
 });
@@ -840,13 +880,18 @@ function stripInlineFontSize(html) {
   return html.replace(/font-size\s*:[^;"']+;?/gi, '');
 }
 
-/* 预览 li ↔ 编辑器同步（含行内格式） */
+/* 预览 li ↔ 编辑器同步（含行内格式）；序号是自动生成的，同步时排除 */
 function syncFromLi(li) {
   const t = document.querySelector(
     `#editor .clause[data-sec="${li.dataset.sec}"][data-idx="${li.dataset.row}"] .text`);
   if (!t) return;
-  t.textContent = li.innerText;
-  t.parentElement.dataset.html = sanitizeHtml(li.innerHTML);
+  const num = li.querySelector('.num');
+  if (num) num.style.display = 'none';
+  const text = li.innerText;
+  const html = li.innerHTML;
+  if (num) num.style.display = '';
+  t.textContent = text;
+  t.parentElement.dataset.html = sanitizeHtml(html.replace(/<span class="num"[^>]*>[\s\S]*?<\/span>/, ''));
   saveDraft();   // 不在输入过程中重渲染，避免打断光标
 }
 $doc.addEventListener('input', e => {
