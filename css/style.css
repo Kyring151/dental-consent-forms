@@ -307,6 +307,8 @@ body {
 .sheet ol.clauses li { position: relative; padding-left: 7mm; margin-bottom: 1.2mm; text-align: justify; }
 .sheet ol.clauses li .num { position: absolute; left: 0; }
 .sheet ol.clauses li.blank { padding-left: 0; }
+/* 标题前空行（预览中在标题里回车插入），空 div 需显式高度 */
+.sheet .tgap { height: 1.3em; }
 .sheet ol.clauses li.key { color: #a00000; font-weight: bold; }
 /* 预览条款可直编的 affordance：文本光标 + 聚焦虚线框（打印不显示） */
 .sheet ol.clauses li[data-row] { cursor: text; }
