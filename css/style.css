@@ -175,6 +175,10 @@ body {
   padding: 5px 12px; cursor: pointer; margin: 2px 0 0 8px; transition: all .15s;
 }
 .add-clause:hover { color: var(--teal); border-color: var(--teal); background: #f2fafc; }
+.ls-btns { display: flex; gap: 8px; flex-wrap: wrap; padding: 2px 0 2px 8px; }
+.ls-btns .add-clause { margin: 0; }
+.add-clause.danger { color: var(--danger); border-color: #e5c1c1; }
+.add-clause.danger:hover { border-color: var(--danger); background: #fbeaea; }
 
 /* ---------- A4 预览：.doc 为纸张容器，.sheet 为每张白纸 ---------- */
 .preview-wrap { flex: 1; overflow: auto; padding: 6px 10px 24px; display: flex; justify-content: center; align-items: flex-start; }

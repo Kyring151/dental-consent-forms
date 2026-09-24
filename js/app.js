@@ -55,6 +55,15 @@ try {
   if (saved && saved.size >= 10 && saved.size <= 24) fontCfg = saved;
 } catch { /* 用默认 */ }
 
+/* 「我的默认版式」（全局）：信息栏字段/列宽、签字区、信息栏字号，存为默认后新模板沿用 */
+const LAYOUT_KEY = 'cb_layout';
+function loadMyLayout() {
+  try {
+    const d = JSON.parse(localStorage.getItem(LAYOUT_KEY) || 'null');
+    return (d && Array.isArray(d.meta) && d.meta.length) ? d : null;
+  } catch { return null; }
+}
+
 /* ---------- 草稿读写 ---------- */
 function draftKey(id) { return 'draft:' + id; }
 
@@ -110,13 +119,19 @@ function collectLayout() {
 
 function buildLayoutSettings(tpl) {
   const draft = loadDraft(tpl.id);
+  const myLayout = loadMyLayout();
   const meta = (draft && draft.layout && Array.isArray(draft.layout.meta) && draft.layout.meta.length)
     ? draft.layout.meta
-    : DEFAULT_META_FIELDS.map(f => ({ label: f.label, on: true, w: f.w }));
+    : (myLayout && Array.isArray(myLayout.meta) && myLayout.meta.length)
+      ? myLayout.meta
+      : DEFAULT_META_FIELDS.map(f => ({ label: f.label, on: true, w: f.w }));
   const sign = (draft && draft.layout && Array.isArray(draft.layout.sign) && draft.layout.sign.length)
     ? draft.layout.sign
-    : SIGN_BLOCK.map(s => ({ label: s.label, on: true, line: s.line * 5 })); // 换算为 mm
-  const metaFontSaved = (draft && draft.layout && draft.layout.metaFont) || 12;
+    : (myLayout && Array.isArray(myLayout.sign) && myLayout.sign.length)
+      ? myLayout.sign
+      : SIGN_BLOCK.map(s => ({ label: s.label, on: true, line: s.line * 5 })); // 换算为 mm
+  const metaFontSaved = (draft && draft.layout && draft.layout.metaFont)
+    || (myLayout && myLayout.metaFont) || 12;
 
   const wrap = document.createElement('div');
   wrap.className = 'layout-settings';
@@ -230,7 +245,50 @@ function buildLayoutSettings(tpl) {
   frow.appendChild(fsize); frow.appendChild(funit); frow.appendChild(fcolor);
   g3.appendChild(frow);
 
-  wrap.appendChild(g1); wrap.appendChild(g2); wrap.appendChild(g3);
+  /* 默认版式与重置 */
+  const g4 = document.createElement('div');
+  g4.className = 'ls-group';
+  g4.innerHTML = '<div class="ls-head">默认版式与重置</div>';
+  const brow = document.createElement('div');
+  brow.className = 'ls-btns';
+
+  const saveDefaultBtn = document.createElement('button');
+  saveDefaultBtn.className = 'add-clause';
+  saveDefaultBtn.textContent = '存为默认版式';
+  saveDefaultBtn.title = '把当前信息栏 / 签字区 / 信息栏字号存为默认，之后切换模板自动沿用';
+  saveDefaultBtn.onclick = () => {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(collectLayout()));
+    toast('已存为默认版式，其他模板将沿用');
+  };
+
+  const restoreDefaultBtn = document.createElement('button');
+  restoreDefaultBtn.className = 'add-clause';
+  restoreDefaultBtn.textContent = '恢复内置版式';
+  restoreDefaultBtn.title = '信息栏、签字区、信息栏字号恢复初始默认（不影响条款改动）';
+  restoreDefaultBtn.onclick = () => {
+    if (!confirm('恢复内置版式：信息栏字段、签字区、信息栏字号全部恢复初始默认？\n（条款的勾选与改字不受影响）')) return;
+    localStorage.removeItem(LAYOUT_KEY);
+    const d = loadDraft(tpl.id);
+    if (d) { delete d.layout; localStorage.setItem(draftKey(tpl.id), JSON.stringify(d)); }
+    selectTemplate(tpl.id);
+    toast('已恢复内置版式');
+  };
+
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'add-clause danger';
+  resetBtn.textContent = '重置本模板';
+  resetBtn.title = '清除本模板所有改动，回到预制初始状态';
+  resetBtn.onclick = () => {
+    if (!confirm('将「' + tpl.name + '」恢复为初始预制状态：\n・清除所有条款勾选 / 改字 / 自定义条款\n・清除字体设置与行内格式\n・信息栏、签字区、信息栏字号恢复默认\n\n此操作不可撤销，确定重置？')) return;
+    localStorage.removeItem(draftKey(tpl.id));
+    selectTemplate(tpl.id);
+    toast('已重置为模板初始状态');
+  };
+
+  brow.appendChild(saveDefaultBtn); brow.appendChild(restoreDefaultBtn); brow.appendChild(resetBtn);
+  g4.appendChild(brow);
+
+  wrap.appendChild(g1); wrap.appendChild(g2); wrap.appendChild(g3); wrap.appendChild(g4);
   return wrap;
 }
 
