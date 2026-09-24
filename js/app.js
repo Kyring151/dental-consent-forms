@@ -7,7 +7,7 @@ const $tplList = document.getElementById('tplList');
 const $editor = document.getElementById('editor');
 const $doc = document.getElementById('doc');
 const $btnPrint = document.getElementById('btnPrint');
-const $btnWord = document.getElementById('btnWord');
+const $btnPdf = document.getElementById('btnPdf');
 const $btnReset = document.getElementById('btnReset');
 const $btnLogo = document.getElementById('btnLogo');
 const $logoInput = document.getElementById('logoInput');
@@ -652,10 +652,10 @@ function flowHtml(items) {
       }
       html += '</ol>';
       i = j;
-    } else if (it.kind === 'h3') {
+    } else if (it.kind === 'h3' || it.kind === 'h3cont') {
       for (let g = 0; g < (it.gap || 0); g++)
         html += '<div class="tgap" contenteditable="false"></div>';
-      html += `<h3 data-sec="${it.olKey}" contenteditable="true">${escapeHtml(it.title)}</h3>`;
+      html += `<h3${it.kind === 'h3cont' ? ' class="cont"' : ''} data-sec="${it.olKey}" contenteditable="true">${escapeHtml(it.title)}</h3>`;
       i++;
     } else if (it.kind === 'sign') {
       html += signHtml(); i++;
@@ -717,12 +717,15 @@ function escapeHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/* 预览回车的三种场景 —
+/* 预览回车 / 退格的场景 —
    ・光标在条款最开头（序号之前 / 序号与正文之间）：序号+正文整体下移一行，
      即在本条前插一个无编号空行；不触发重渲染，可连续回车插多行
    ・光标掉在 ol 上（点到序号左侧等不可编区域，Chrome 会把光标放在 ol 层）：
      按光标位置找到对应条款，整条下移
-   ・光标在标题（文书大标题 / 各节标题）里：在标题上方插一空行（标题不内部换行）
+   ・光标在条款最开头按 Backspace：删掉本条前面的一个空行（往回上退一行），无空行则不动
+   ・选中一段文字（非折叠选区）后回车：选中所在条款整体下移一行
+   ・光标在标题（文书大标题 / 各节标题）里：回车 = 在标题上方插一空行（标题不内部换行），
+     Backspace = 删掉标题上方一个空行
    其余位置：条款内换行（不拆分条款），以 \n 存回草稿 */
 function insertBlankBefore(li) {
   const blank = document.createElement('li');
@@ -733,6 +736,20 @@ function insertBlankBefore(li) {
     `#editor .clause[data-sec="${li.dataset.sec}"][data-idx="${li.dataset.row}"]`);
   if (row) row.dataset.blanks = (parseInt(row.dataset.blanks) || 0) + 1;
   saveDraft();
+}
+
+function removeBlankBefore(li) {
+  const prev = li.previousElementSibling;
+  if (!prev || !prev.classList.contains('blank')) return false;
+  prev.remove();
+  const row = document.querySelector(
+    `#editor .clause[data-sec="${li.dataset.sec}"][data-idx="${li.dataset.row}"]`);
+  if (row) {
+    const n = (parseInt(row.dataset.blanks) || 0) - 1;
+    if (n > 0) row.dataset.blanks = n; else delete row.dataset.blanks;
+  }
+  saveDraft();
+  return true;
 }
 
 /* 光标是否在本条内容的最开头：取 li 开头到光标的片段，除自动序号外不允许有任何内容
@@ -755,11 +772,43 @@ function caretAtClauseStart(li) {
 }
 
 $doc.addEventListener('keydown', e => {
-  if (e.key !== 'Enter' || !e.target.closest) return;
+  if (!e.target.closest) return;
+  const isEnter = e.key === 'Enter';
+  const isBk = e.key === 'Backspace';
+  if (!isEnter && !isBk) return;
   const li = e.target.closest('li[data-row]');
   const title = e.target.closest('h2[data-role], h3[data-sec]');
   const ol = e.target.closest('ol.clauses');
   if (!li && !title && !ol) return;
+
+  /* Backspace：条款 / 标题最开头 → 往回上退一行（删一个空行）；无空行则不动 */
+  if (isBk) {
+    if (li && caretAtClauseStart(li) && removeBlankBefore(li)) e.preventDefault();
+    else if (title) {
+      const prev = title.previousElementSibling;
+      if (prev && prev.classList.contains('tgap')) {
+        e.preventDefault();
+        prev.remove();
+        if (title.dataset.sec != null) {
+          const secEl = document.querySelectorAll('#editor section')[parseInt(title.dataset.sec)];
+          if (secEl) {
+            const n = (parseInt(secEl.dataset.gap) || 0) - 1;
+            if (n > 0) secEl.dataset.gap = n; else delete secEl.dataset.gap;
+          }
+        } else {
+          const dtEl = document.querySelector('#editor .dt-row');
+          if (dtEl) {
+            const n = (parseInt(dtEl.dataset.gap) || 0) - 1;
+            if (n > 0) dtEl.dataset.gap = n; else delete dtEl.dataset.gap;
+          }
+        }
+        saveDraft();
+      }
+    }
+    return;
+  }
+
+  /* Enter */
   e.preventDefault();
 
   if (title) {
@@ -778,9 +827,15 @@ $doc.addEventListener('keydown', e => {
     return;
   }
 
+  /* 选中一段文字（非折叠选区）后回车：选中所在条款整体下移一行 */
+  const sel = getSelection();
+  if (li && sel.rangeCount && !sel.isCollapsed) {
+    insertBlankBefore(li);
+    return;
+  }
+
   if (!li) {
     /* 光标在 ol 层：按 childNode 偏移找到它指向的条款，在其前面插空行 */
-    const sel = getSelection();
     const off = sel.rangeCount ? sel.getRangeAt(0).startOffset : 0;
     const kids = [...ol.children];
     let target = null;
@@ -1004,77 +1059,164 @@ $logoDel.onclick = () => {
 /* ---------- 顶部按钮 ---------- */
 $btnPrint.onclick = () => window.print();
 
-/* ---------- Word 导出 ----------
- * 浏览器内生成 .doc（Word HTML 格式，WPS/Word 均可打开）：
- * 序号转纯文本、信息栏用表格、签字区用下划线段落，用户导出后可自由排版再打印 */
-function wordHtml(items) {
-  const pt = Math.round(fontCfg.size * 0.75 * 10) / 10;   // 正文字号 px → pt
-  const body = [];
-  /* 文书大标题（含标题前空行） */
-  const g0 = (items[0] && items[0].kind === 'h2' && items[0].gap) || 0;
-  for (let i = 0; i < g0; i++) body.push('<p>&nbsp;</p>');
-  body.push(`<h2>${escapeHtml(activeTpl.docTitle)}</h2>`);
-  /* 患者信息栏：表格（Word 不认 flex，表格最稳） */
-  const layout = collectLayout();
-  const fields = layout.meta.filter(m => m.on);
-  if (fields.length) {
-    const mf = Math.round((layout.metaFont || 12) * 0.75);
-    body.push('<table style="width:100%;border-collapse:collapse">');
-    for (let i = 0; i < fields.length; i += 4) {
-      const row = fields.slice(i, i + 4);
-      body.push('<tr>' + row.map(f =>
-        `<td style="font-size:${mf}pt;padding:8pt 6pt 2pt 0;width:${Math.round(100 / row.length)}%">${escapeHtml(f.label)}________________</td>`
-      ).join('') + '</tr>');
+/* ---------- 物理分页（仅导出 PDF 用） ----------
+ * 预览是连续长卷；导出时离屏量尺测高 → 297mm 贪心分页 → 每页一个条目数组。
+ * 量尺只装 flowHtml(items)（h2/meta 不占位），按标签+数量逐个核对，避免错位 */
+function paginateItems(items, fontStyle) {
+  const offscreen = 'position:absolute;left:-99999px;top:0;visibility:hidden;';
+  // 页眉块（h2+rule+信息栏）单独测高，对应 items[0]/[1]
+  const head = document.createElement('div');
+  head.className = 'sheet measurer';
+  head.style.cssText = offscreen + fontStyle;
+  head.innerHTML = `<h2>${escapeHtml(activeTpl.docTitle)}</h2><div class="title-rule"></div>` + metaGridHtml();
+  document.body.appendChild(head);
+  const heights = new Array(items.length);
+  heights[0] = [...head.children].reduce((sum, el) => sum + el.offsetHeight, 0);
+  heights[1] = 0;
+  head.remove();
+
+  // 正文量尺：只装 flowHtml 的输出，子元素与条目一一对应
+  const meas = document.createElement('div');
+  meas.className = 'sheet measurer';
+  meas.style.cssText = offscreen + fontStyle;
+  meas.innerHTML = flowHtml(items);
+  document.body.appendChild(meas);
+
+  const expectList = [];
+  for (let i = 2; i < items.length; i++) {
+    const it = items[i];
+    if (it.kind === 'li') {
+      if (items[i - 1].kind !== 'li' || items[i - 1].olKey !== it.olKey) {
+        expectList.push({ type: 'ol', start: i });
+      }
+    } else {
+      expectList.push({ type: 'el', index: i });
     }
-    body.push('</table><p>&nbsp;</p>');
   }
-  /* 正文：复用 flowHtml 再做工整化替换（序号 span → 纯文本、空行/空段补 <br>、剥 contenteditable） */
-  let main = flowHtml(items.filter(it => it.kind !== 'sign' && it.kind !== 'foot'))
-    .replace(/<span class="num"[^>]*>([\d]+\.)<\/span>/g, '$1　')
-    .replace(/<li class="blank"[^>]*><\/li>/g, '<li class="blank"><br></li>')
-    .replace(/<div class="tgap"[^>]*><\/div>/g, '<div class="tgap"><br></div>')
-    .replace(/ contenteditable="(true|false)"/g, '')
-    .replace(/ data-(role|sec)="[^"]*"/g, '');
-  body.push(main);
-  /* 签字区 */
-  const signs = layout.sign.filter(x => x.on);
-  if (signs.length) {
-    body.push('<div style="margin-top:28pt"></div>');
-    signs.forEach(x => body.push(`<p>${escapeHtml(x.label)}：______________________</p>`));
+
+  const cs = getComputedStyle(meas);
+  const pxPerMm = meas.clientWidth / 210;
+  const pageH = 297 * pxPerMm - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const els = [...meas.children];
+  let pos = 0, ok = true;
+  for (const ex of expectList) {
+    if (ex.type === 'ol') {
+      const el = els[pos++];
+      if (!el || el.tagName !== 'OL') { ok = false; break; }
+      const lis = [...el.children];
+      let cnt = 0;
+      while (ex.start + cnt < items.length && items[ex.start + cnt].kind === 'li') cnt++;
+      let need = 0;
+      for (let k = 0; k < cnt; k++) need += 1 + (items[ex.start + k].blanks || 0);
+      if (lis.length !== need) { ok = false; break; }
+      let p = 0;
+      for (let k = 0; k < cnt; k++) {
+        heights[ex.start + k] = lis[p++].offsetHeight;
+        for (let b = 0; b < (items[ex.start + k].blanks || 0); b++) {
+          heights[ex.start + k] += lis[p++].offsetHeight;
+        }
+      }
+    } else {
+      const it = items[ex.index];
+      const need = 1 + (it.kind === 'h3' || it.kind === 'h3cont' ? (it.gap || 0) : 0);
+      if (pos + need > els.length) { ok = false; break; }
+      let h = 0;
+      for (let k = 0; k < need; k++) h += els[pos + k].offsetHeight;
+      pos += need;
+      heights[ex.index] = h;
+    }
   }
-  const foot = items[items.length - 1];
-  if (foot && foot.kind === 'foot') {
-    body.push(`<p style="font-size:8pt;color:#666;margin-top:14pt">${escapeHtml(foot.text)}</p>`);
+  if (ok && pos !== els.length) ok = false;
+  // 续页标题高度
+  const probe = document.createElement('h3');
+  probe.className = 'cont'; probe.textContent = '测（续）';
+  meas.appendChild(probe);
+  const contH = probe.offsetHeight;
+  probe.remove();
+  meas.remove();
+
+  if (!ok) return [items];   // 测量失败兜底：整卷一页
+
+  const TOL = 8; // 安全余量（px），宁可早翻页也不挤爆
+  const secTitle = {};
+  items.forEach(it => { if (it.kind === 'h3') secTitle[it.olKey] = it.title; });
+
+  const pages = [];
+  let pg = [], curH = 0;
+  const headerOf = key => x => (x.kind === 'h3' || x.kind === 'h3cont') && x.olKey === key;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    /* h3 与其首条 li 视为一个整体：都放不下就先翻页，避免「标题孤立页底、内容跑下一页」 */
+    if (it.kind === 'h3' && i + 1 < items.length &&
+        items[i + 1].kind === 'li' && items[i + 1].olKey === it.olKey) {
+      if (pg.length > 0 && curH + heights[i] + heights[i + 1] > pageH - TOL) {
+        pages.push(pg); pg = []; curH = 0;
+      }
+    }
+    if (it.kind === 'li') {
+      /* 先按「本页是否已有该节标题」决定翻页时机，再在（可能全新的）页面上补标题 —
+         顺序不能反：先补标题再翻页会把标题插到条款后面 */
+      const need = pg.some(headerOf(it.olKey)) ? 0 : contH;
+      if (pg.length > 0 && curH + need + heights[i] > pageH - TOL) {
+        pages.push(pg); pg = []; curH = 0;
+      }
+      if (!pg.some(headerOf(it.olKey))) {
+        pg.push({ kind: 'h3cont', title: secTitle[it.olKey] + '（续）', olKey: it.olKey });
+        curH += contH;
+      }
+    } else if (pg.length > 0 && curH + heights[i] > pageH - TOL) {
+      pages.push(pg); pg = []; curH = 0;
+    }
+    pg.push(it); curH += heights[i];
+    if (heights[i] > pageH - TOL) { pages.push(pg); pg = []; curH = 0; }
   }
-  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>${escapeHtml(activeTpl.docTitle)}</title>
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
-<style>
-@page Section1 { size: 21cm 29.7cm; margin: 2.2cm; }
-div.Section1 { page: Section1; }
-body { font-family: 宋体, SimSun, serif; font-size: ${pt}pt; color: ${fontCfg.color}; line-height: 1.5; }
-h2 { text-align: center; font-size: ${Math.round(pt * 1.7)}pt; margin: 0 0 14pt; }
-h3 { font-size: ${Math.round(pt * 1.25)}pt; margin: 14pt 0 6pt; }
-ol.clauses { list-style: none; margin: 0; padding: 0; }
-ol.clauses li { margin: 0 0 4pt 26pt; text-indent: -26pt; text-align: justify; }
-ol.clauses li.key { color: #a00000; font-weight: bold; }
-</style></head>
-<body><div class="Section1">${body.join(String.fromCharCode(10))}</div></body></html>`;
+  if (pg.length) pages.push(pg);
+  return pages.filter(p => p.length);
+
 }
 
-$btnWord.onclick = () => {
-  if (!currentId) return;
-  const sections = collectDocData();
-  if (!sections.length) { toast('请先至少勾选一条条款', true); return; }
+$btnPdf.onclick = async () => {
   const tpl = TEMPLATES.find(t => t.id === currentId);
+  if (typeof html2canvas === 'undefined' || !window.jspdf) {
+    toast('PDF 组件未加载，请检查 lib 目录', true); return;
+  }
+  const old = $btnPdf.textContent;
+  $btnPdf.disabled = true;
+  $btnPdf.textContent = '⏳ 正在生成…';
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  const sections = collectDocData();
+  if (!sections.length) {
+    $btnPdf.disabled = false; $btnPdf.textContent = old;
+    toast('请先至少勾选一条条款', true); return;
+  }
   const items = buildItems(tpl, sections);
-  const blob = new Blob(['﻿' + wordHtml(items)], { type: 'application/msword' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `${activeTpl.docTitle}.doc`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  toast('Word 文档已开始下载，可用 WPS/Word 打开后继续排版');
+  const fontStyle = `font-size:${fontCfg.size}px;color:${fontCfg.color};`;
+  const pages = paginateItems(items, fontStyle);
+  const wrap = document.createElement('div');
+  wrap.className = 'pdf-doc';
+  wrap.style.cssText = 'position:absolute;left:-99999px;top:0;';
+  const total = pages.length;
+  wrap.innerHTML = pages.map((pg, pi) => sheetHtml(pg, pi, total, fontStyle)).join('');
+  document.body.appendChild(wrap);
+  try {
+    const sheets = [...wrap.querySelectorAll('.sheet')];
+    const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    for (let i = 0; i < sheets.length; i++) {
+      const canvas = await html2canvas(sheets[i], { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+      const img = canvas.toDataURL('image/jpeg', 0.96);
+      if (i > 0) pdf.addPage();
+      pdf.addImage(img, 'JPEG', 0, 0, 210, 297);
+    }
+    pdf.save(`${tpl.docTitle}.pdf`);
+    toast('PDF 已开始下载');
+  } catch (e) {
+    console.error(e);
+    toast('导出失败：' + (e.message || e), true);
+  } finally {
+    wrap.remove();
+    $btnPdf.disabled = false;
+    $btnPdf.textContent = old;
+  }
 };
 
 $btnReset.onclick = () => {
