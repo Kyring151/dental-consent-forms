@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>口腔知情同意书生成器</title>
+<link rel="stylesheet" href="css/style.css?v=10">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🦷</span>
+    <h1>口腔知情同意书生成器</h1>
+    <span class="ver" id="toolVer"></span>
+  </div>
+  <div class="actions">
+    <input type="file" id="logoInput" accept="image/png,image/jpeg" hidden>
+    <button class="btn" id="btnLogo" title="上传后显示在文书首页右上角，仅保存在本机">🏷 上传 Logo</button>
+    <span class="logo-thumb-wrap" id="logoWrap" hidden>
+      <img class="logo-thumb" id="logoThumb" alt="logo">
+      <button class="logo-del" id="logoDel" title="移除 Logo">✕</button>
+    </span>
+    <button class="btn" id="btnPrint">🖨 打印</button>
+    <button class="btn primary" id="btnPdf">⬇ 导出 PDF</button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- 左侧：模板选择与条款编辑 -->
+  <aside class="panel">
+    <div class="panel-title">选择项目</div>
+    <nav class="tpl-list" id="tplList"></nav>
+
+    <div class="panel-title">条款编辑
+      <span class="hint-inline">取消勾选 = 不放入文书；点击文字可微调</span>
+      <button class="btn mini" id="btnReset" title="放弃当前修改，恢复模板默认条款">↺ 恢复默认</button>
+    </div>
+    <div id="editor" class="editor">
+      <div class="empty-tip">← 请先选择一个项目</div>
+    </div>
+  </aside>
+
+  <!-- 右侧：A4 实时预览 -->
+  <main class="preview-wrap">
+    <div id="doc" class="doc"></div>
+  </main>
+</div>
+
+<footer class="foot">
+  所有数据仅保存在本机浏览器（localStorage），不会上传到任何服务器 ・
+  模板内容依据 2024–2025 年公开指南与专家共识整理，<b>仅供参考</b>，请结合本机构实际与属地法规由医务负责人审核后使用
+</footer>
+
+<script src="lib/html2canvas.min.js"></script>
+<script src="lib/jspdf.umd.min.js"></script>
+<script src="js/templates.js?v=10"></script>
+<script src="js/app.js?v=10"></script>
+</body>
+</html>

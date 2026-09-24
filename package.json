@@ -1,0 +1,9 @@
+{
+  "name": "consent-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "口腔治疗知情同意书生成器（本地纯前端工具）",
+  "scripts": {
+    "dev": "node server.js"
+  }
+}
