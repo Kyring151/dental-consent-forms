@@ -72,8 +72,10 @@ function saveDraft() {
     const on = el.querySelector('input[type=checkbox]').checked;
     let style = null;
     try { style = JSON.parse(el.dataset.style || 'null'); } catch { style = null; }
-    if (!on || el.dataset.custom === '1' || text !== el.dataset.orig || style) {
-      state.edits[`${sec}:${idx}`] = { on, text, style };
+    const htmlRaw = el.dataset.html || '';
+    const hasHtml = /<\w+[ >]/.test(htmlRaw);
+    if (!on || el.dataset.custom === '1' || text !== el.dataset.orig || style || hasHtml) {
+      state.edits[`${sec}:${idx}`] = { on, text, style, html: hasHtml ? htmlRaw : undefined };
     }
     if (el.dataset.custom === '1') {
       (state.customs[sec] = state.customs[sec] || []).push({ idx, text });
@@ -217,7 +219,7 @@ function applyDraft(tpl) {
   tpl.sections.forEach((sec, si) => {
     sec.clauses.forEach((c, ci) => {
       const d = draft && draft.edits[`${si}:${ci}`];
-      if (d) { c._on = d.on; c._text = d.text; c._style = d.style; }
+      if (d) { c._on = d.on; c._text = d.text; c._style = d.style; c._html = d.html; }
       else if (c.opt) c._on = false;   // 可选条款默认不勾选
     });
     if (draft && draft.customs && draft.customs[si]) {
@@ -300,6 +302,7 @@ function addClauseRow(secEl, tpl, si, ci, c) {
   if (c.custom) row.dataset.custom = '1';
   row.dataset.orig = c.text;
   if (c._style) row.dataset.style = JSON.stringify(c._style);
+  if (c._html) row.dataset.html = c._html;
 
   const cb = document.createElement('input');
   cb.type = 'checkbox';
@@ -318,8 +321,11 @@ function addClauseRow(secEl, tpl, si, ci, c) {
   text.className = 'text';
   text.contentEditable = 'true';
   text.textContent = c._text || c.text;
-  text.oninput = () => { saveDraft(); renderDoc(tpl); };
-  text.onpaste = () => setTimeout(() => { saveDraft(); renderDoc(tpl); }, 0);
+  text.oninput = () => {
+    delete row.dataset.html;   // 左侧纯文本编辑会丢行内格式，以预览中的格式为准
+    saveDraft(); renderDoc(tpl);
+  };
+  text.onpaste = () => setTimeout(() => { delete row.dataset.html; saveDraft(); renderDoc(tpl); }, 0);
 
   row.appendChild(cb);
   row.appendChild(text);
@@ -367,17 +373,18 @@ function addClauseRow(secEl, tpl, si, ci, c) {
   undoBtn.textContent = '↺';
   undoBtn.title = '恢复该条款为模板默认';
   undoBtn.onclick = () => {
-    if (!confirm('恢复该条款为模板默认文字，并清除其字体设置？')) return;
+    if (!confirm('恢复该条款为模板默认文字，并清除其字体设置与行内格式？')) return;
     text.textContent = c.text;
     delete row.dataset.style;
-    delete c._text; delete c._style;
+    delete row.dataset.html;
+    delete c._text; delete c._style; delete c._html;
     syncPanel(); undoBtn.style.visibility = 'hidden';
     saveDraft(); renderDoc(tpl);
   };
   row.appendChild(undoBtn);
   const syncUndo = () => {
     undoBtn.style.visibility =
-      (text.textContent !== c.text || row.dataset.style) ? 'visible' : 'hidden';
+      (text.textContent !== c.text || row.dataset.style || row.dataset.html) ? 'visible' : 'hidden';
   };
   text.addEventListener('input', syncUndo);
   syncUndo();
@@ -412,7 +419,12 @@ function collectDocData() {
       if (!on) return;
       let style = null;
       try { style = JSON.parse(row.dataset.style || 'null'); } catch { style = null; }
-      clauses.push({ text: row.querySelector('.text').textContent, key: row.classList.contains('key'), row: ri, style });
+      clauses.push({
+        text: row.querySelector('.text').textContent,
+        key: row.classList.contains('key'),
+        row: ri, style,
+        html: /<\w+[ >]/.test(row.dataset.html || '') ? row.dataset.html : null
+      });
     });
     if (clauses.length) sections.push({ title, clauses, shared: secEl.dataset.shared === '1' });
   });
@@ -512,7 +524,7 @@ function flowHtml(items) {
       html += `<ol class="clauses" start="${it.seq}">`;
       for (let k = i; k < j; k++) {
         const c = items[k];
-        const body = escapeHtml(c.text).replace(/\n/g, '<br>');
+        const body = c.html ? c.html : escapeHtml(c.text).replace(/\n/g, '<br>');
         const st = c.style ? ` style="${c.style.size ? `font-size:${c.style.size}px;` : ''}${c.style.color ? `color:${c.style.color};` : ''}"` : '';
         html += `<li${c.key ? ' class="key"' : ''}${st} data-sec="${c.olKey}" data-row="${c.row}" contenteditable="true">${body}</li>`;
       }
@@ -546,7 +558,7 @@ function renderDoc(tpl) {
   sections.forEach((sec, i) => {
     const title = sec.shared ? `${CN_NUM[i]}、患者声明` : sec.title;
     items.push({ kind: 'h3', title, olKey: i });
-    sec.clauses.forEach((c, n) => items.push({ kind: 'li', olKey: i, row: c.row, seq: n + 1, key: !!c.key, text: c.text, style: c.style }));
+    sec.clauses.forEach((c, n) => items.push({ kind: 'li', olKey: i, row: c.row, seq: n + 1, key: !!c.key, text: c.text, style: c.style, html: c.html }));
   });
   items.push({ kind: 'sign' }, { kind: 'foot', text: footText });
 
@@ -671,15 +683,96 @@ $doc.addEventListener('keydown', e => {
     document.execCommand('insertLineBreak');
   }
 });
+
+/* 行内格式净化：只保留 b/i/u/br 和带白名单样式的 span，其余剥壳或丢弃 */
+function sanitizeHtml(html) {
+  const SIZE = { 1: '10px', 2: '13px', 3: '16px', 4: '18px', 5: '24px', 6: '32px', 7: '48px' };
+  const d = new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html');
+  const proc = el => {
+    let out = '';
+    el.childNodes.forEach(n => {
+      if (n.nodeType === 3) {
+        out += n.textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return;
+      }
+      if (n.nodeType !== 1) return;
+      const t = n.tagName, inner = proc(n);
+      if (t === 'B' || t === 'STRONG') out += `<b>${inner}</b>`;
+      else if (t === 'I' || t === 'EM') out += `<i>${inner}</i>`;
+      else if (t === 'U') out += `<u>${inner}</u>`;
+      else if (t === 'BR') out += '<br>';
+      else if (t === 'SPAN') {
+        const st = [];
+        if (n.style.fontWeight && n.style.fontWeight !== 'normal') st.push('font-weight:' + n.style.fontWeight);
+        if (n.style.fontStyle && n.style.fontStyle !== 'normal') st.push('font-style:' + n.style.fontStyle);
+        if (n.style.color) st.push('color:' + n.style.color);
+        if (n.style.fontSize) st.push('font-size:' + n.style.fontSize);
+        out += st.length ? `<span style="${st.join(';')}">${inner}</span>` : inner;
+      } else if (t === 'FONT') {   // 兼容未开 styleWithCSS 的旧格式
+        const st = [];
+        if (n.getAttribute('color')) st.push('color:' + n.getAttribute('color'));
+        if (n.size) st.push('font-size:' + (SIZE[n.size] || '16px'));
+        out += st.length ? `<span style="${st.join(';')}">${inner}</span>` : inner;
+      } else out += inner;         // div/p/其他：剥壳保留文字
+    });
+    return out;
+  };
+  return proc(d.body.firstChild);
+}
+
+/* 预览 li ↔ 编辑器同步（含行内格式） */
+function syncFromLi(li) {
+  const t = document.querySelector(
+    `#editor .clause[data-sec="${li.dataset.sec}"][data-idx="${li.dataset.row}"] .text`);
+  if (!t) return;
+  t.textContent = li.innerText;
+  t.parentElement.dataset.html = sanitizeHtml(li.innerHTML);
+  saveDraft();   // 不在输入过程中重渲染，避免打断光标
+}
 $doc.addEventListener('input', e => {
   const li = e.target.closest && e.target.closest('li[data-row]');
-  if (!li) return;
-  const row = document.querySelector(
-    `#editor .clause[data-sec="${li.dataset.sec}"][data-idx="${li.dataset.row}"] .text`);
-  if (row) {
-    row.textContent = li.innerText;
-    saveDraft();   // 不在输入过程中重渲染，避免打断光标
-  }
+  if (li) syncFromLi(li);
+});
+
+/* 选中浮动工具栏：B / I / U / 颜色 / 清除格式 */
+const selBar = document.createElement('div');
+selBar.className = 'selbar';
+selBar.hidden = true;
+selBar.innerHTML = `
+  <button data-cmd="bold" title="加粗"><b>B</b></button>
+  <button data-cmd="italic" title="斜体"><i>I</i></button>
+  <button data-cmd="underline" title="下划线"><u>U</u></button>
+  <input type="color" title="文字颜色">
+  <button data-clear="1" title="清除格式">⌫</button>`;
+document.body.appendChild(selBar);
+try { document.execCommand('styleWithCSS', false, true); } catch { /* 忽略 */ }
+selBar.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (btn && btn.dataset.cmd) {
+    document.execCommand(btn.dataset.cmd, false, null);
+  } else if (btn && btn.dataset.clear) {
+    document.execCommand('removeFormat', false, null);
+  } else return;
+  const li = getSelection().anchorNode && getSelection().anchorNode.parentElement &&
+             getSelection().anchorNode.parentElement.closest('li[data-row]');
+  if (li) syncFromLi(li);
+});
+selBar.querySelector('input[type=color]').addEventListener('input', e => {
+  document.execCommand('foreColor', false, e.target.value);
+  const li = getSelection().anchorNode && getSelection().anchorNode.parentElement &&
+             getSelection().anchorNode.parentElement.closest('li[data-row]');
+  if (li) syncFromLi(li);
+});
+document.addEventListener('selectionchange', () => {
+  const sel = getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) { selBar.hidden = true; return; }
+  const li = sel.anchorNode && sel.anchorNode.parentElement &&
+             sel.anchorNode.parentElement.closest('li[data-row]');
+  if (!li || !$doc.contains(li)) { selBar.hidden = true; return; }
+  const r = sel.getRangeAt(0).getBoundingClientRect();
+  selBar.hidden = false;
+  selBar.style.left = Math.max(8, r.left + r.width / 2 - selBar.offsetWidth / 2) + 'px';
+  selBar.style.top = Math.max(8, r.top - selBar.offsetHeight - 8) + 'px';
 });
 
 /* ---------- Logo 上传 ----------

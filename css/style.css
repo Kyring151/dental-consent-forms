@@ -215,6 +215,24 @@ body {
 .meta-grid .mcell:last-child { border-right: none; }
 .meta-grid .mlbl { font-size: 0.72em; color: #333; white-space: nowrap; margin-right: 2mm; letter-spacing: 1px; }
 
+/* 选中浮动工具栏（Word 式行内格式） */
+.selbar {
+  position: fixed; z-index: 100;
+  display: flex; align-items: center; gap: 2px;
+  background: #16303f; border-radius: 8px; padding: 4px 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+}
+.selbar[hidden] { display: none; }
+.selbar button {
+  width: 26px; height: 26px; border: none; border-radius: 5px;
+  background: transparent; color: #dfe8ee; font-size: 13px; cursor: pointer;
+}
+.selbar button:hover { background: rgba(255, 255, 255, .15); color: #fff; }
+.selbar input[type=color] {
+  width: 26px; height: 26px; padding: 2px; border: none; border-radius: 5px;
+  background: transparent; cursor: pointer;
+}
+
 /* 逐句字体面板 + 回退按钮 */
 .clause .fbtn {
   flex-shrink: 0; border: 1px solid var(--line); background: #fff;
