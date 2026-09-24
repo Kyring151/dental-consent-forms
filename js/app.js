@@ -33,7 +33,12 @@ const TPL_ICONS = {
   'resin-filling': 'assets/icons/resin_s.jpg',
   'root-canal': 'assets/icons/endo_s.jpg',
   'extraction': 'assets/icons/forceps_s.jpg',
-  'crown': 'assets/icons/bridge_s.jpg'
+  'crown': 'assets/icons/bridge_s.jpg',
+  'ortho': 'assets/icons/ortho_s.jpg',
+  'implant': 'assets/icons/implant_s.jpg',
+  'whitening': 'assets/icons/white_s.jpg',
+  'peds': 'assets/icons/peds_s.jpg',
+  'xray': 'assets/icons/xray_s.jpg'
 };
 
 const CN_NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
