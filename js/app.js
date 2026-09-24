@@ -90,6 +90,18 @@ function saveDraft() {
       (state.customs[sec] = state.customs[sec] || []).push({ idx, text });
     }
   });
+  /* 自定义标题：文书大标题 + 各节标题（与模板默认不同时入草稿） */
+  const dtEl = document.querySelector('#editor .dt-row');
+  if (dtEl) {
+    const cur = dtEl.querySelector('.dt-text').textContent;
+    if (cur !== dtEl.dataset.origTitle) state.docTitle = cur;
+  }
+  const titles = {};
+  document.querySelectorAll('#editor section').forEach((secEl, si) => {
+    const h = secEl.querySelector('h3');
+    if (h && h.textContent !== h.dataset.origText) titles[si] = h.textContent;
+  });
+  if (Object.keys(titles).length) state.titles = titles;
   localStorage.setItem(draftKey(currentId), JSON.stringify(state));
 }
 
@@ -283,9 +295,11 @@ function buildLayoutSettings(tpl) {
 
 function applyDraft(tpl) {
   const draft = loadDraft(tpl.id);
+  if (draft && draft.docTitle) tpl.docTitle = draft.docTitle;
   tpl.sections.forEach((sec, si) => {
+    if (draft && draft.titles && draft.titles[si] != null) sec._title = draft.titles[si];
     sec.clauses.forEach((c, ci) => {
-      const d = draft && draft.edits[`${si}:${ci}`];
+      const d = draft && draft.edits && draft.edits[`${si}:${ci}`];
       if (d) { c._on = d.on; c._text = d.text; c._style = d.style; c._html = d.html; }
       else if (c.opt) c._on = false;   // 可选条款默认不勾选
     });
@@ -326,6 +340,22 @@ function selectTemplate(id) {
 function renderEditor(tpl) {
   $editor.innerHTML = '';
 
+  /* 文书大标题：可直接改字，存草稿（dataset.origTitle 记录模板原标题用于对比） */
+  const origTitle = (TEMPLATES.find(t => t.id === tpl.id) || {}).docTitle || tpl.docTitle;
+  const dtRow = document.createElement('div');
+  dtRow.className = 'dt-row';
+  dtRow.dataset.origTitle = origTitle;
+  const dtLabel = document.createElement('span');
+  dtLabel.className = 'dt-label';
+  dtLabel.textContent = '文书标题';
+  const dtText = document.createElement('span');
+  dtText.className = 'dt-text';
+  dtText.contentEditable = 'true';
+  dtText.textContent = tpl.docTitle;
+  dtText.oninput = () => { tpl.docTitle = dtText.textContent; saveDraft(); renderDoc(tpl); };
+  dtRow.appendChild(dtLabel); dtRow.appendChild(dtText);
+  $editor.appendChild(dtRow);
+
   const based = document.createElement('div');
   based.className = 'based-on';
   based.textContent = '📚 ' + tpl.basedOn;
@@ -336,7 +366,12 @@ function renderEditor(tpl) {
     secEl.dataset.shared = sec.shared ? '1' : '0';
     const h = document.createElement('h3');
     h.dataset.title = sec.title;
-    h.textContent = sec.shared ? sec.title + '（各项目共用）' : sec.title;
+    const initText = sec._title || (sec.shared ? sec.title + '（各项目共用）' : sec.title);
+    h.textContent = initText;
+    h.dataset.origText = initText;
+    h.contentEditable = 'true';
+    h.title = '点击可修改本节标题';
+    h.oninput = () => { saveDraft(); renderDoc(tpl); };
     secEl.appendChild(h);
     sec.clauses.forEach((c, ci) => addClauseRow(secEl, tpl, si, ci, c));
     const addBtn = document.createElement('button');
@@ -480,7 +515,8 @@ function addClauseRow(secEl, tpl, si, ci, c) {
 function collectDocData() {
   const sections = [];
   document.querySelectorAll('#editor section').forEach(secEl => {
-    const title = secEl.querySelector('h3').dataset.title || secEl.querySelector('h3').textContent;
+    let title = secEl.querySelector('h3').textContent;   // 左侧栏可改节标题，以当前文字为准
+    if (secEl.dataset.shared === '1') title = title.replace(/（各项目共用）$/, '');
     const clauses = [];
     secEl.querySelectorAll('.clause').forEach((row, ri) => {
       const on = row.querySelector('input[type=checkbox]').checked;
@@ -626,7 +662,9 @@ function renderDoc(tpl) {
   // 1) 线性块
   const items = [{ kind: 'h2' }, { kind: 'meta' }];
   sections.forEach((sec, i) => {
-    const title = sec.shared ? `${CN_NUM[i]}、患者声明` : sec.title;
+    let title = sec.title;
+    /* 共用声明节模板原文不带编号，保持与常规节一致的自动编号（用户自带编号则不重复加） */
+    if (sec.shared && !/^[一二三四五六七八九十]+、/.test(title)) title = `${CN_NUM[i]}、${title}`;
     items.push({ kind: 'h3', title, olKey: i });
     sec.clauses.forEach((c, n) => items.push({ kind: 'li', olKey: i, row: c.row, seq: n + 1, key: !!c.key, text: c.text, style: c.style, html: c.html }));
   });
@@ -638,7 +676,7 @@ function renderDoc(tpl) {
   const meas = document.createElement('div');
   meas.className = 'sheet measurer';
   meas.style.cssText = `position:absolute;left:-99999px;top:0;visibility:hidden;${fontStyle}`;
-  meas.innerHTML = `<h2>${tpl.docTitle}</h2><div class="title-rule"></div>` + metaGridHtml() + flowHtml(items);
+  meas.innerHTML = `<h2>${escapeHtml(tpl.docTitle)}</h2><div class="title-rule"></div>` + metaGridHtml() + flowHtml(items);
   document.body.appendChild(meas);
 
   const cs = getComputedStyle(meas);
@@ -727,7 +765,7 @@ function renderDoc(tpl) {
   // 4) 渲染：每页一张白纸
   if (!heightsUsed || pages.length === 0) {
     // 测量失败兜底：整卷一张
-    $doc.innerHTML = `<div class="sheet" style="${fontStyle}">${`<h2>${tpl.docTitle}</h2><div class="title-rule"></div>` +
+    $doc.innerHTML = `<div class="sheet" style="${fontStyle}">${`<h2>${escapeHtml(tpl.docTitle)}</h2><div class="title-rule"></div>` +
       (logoData ? `<img class="doc-logo" src="${logoData}" alt="" onerror="this.remove()">` : '') + metaGridHtml() + flowHtml(items)}</div>`;
     return;
   }
@@ -737,7 +775,7 @@ function renderDoc(tpl) {
   pages.forEach((pgItems, pi) => {
     out += `<div class="sheet" style="${fontStyle}">`;
     if (pi === 0) {
-      out += `<h2>${tpl.docTitle}</h2><div class="title-rule"></div>`;
+      out += `<h2>${escapeHtml(tpl.docTitle)}</h2><div class="title-rule"></div>`;
       if (logoData) out += `<img class="doc-logo" src="${logoData}" alt="" onerror="this.remove()">`;
       out += metaGridHtml();
     }

@@ -144,6 +144,18 @@ body {
   border-left: 3px solid var(--teal); border-radius: 0 8px 8px 0;
   margin-bottom: 8px;
 }
+.editor h3[contenteditable] { cursor: text; outline: none; }
+.editor h3[contenteditable]:hover { background: linear-gradient(90deg, #e6f3f8, #eef6ff); }
+.editor h3[contenteditable]:focus { background: var(--amber-bg); box-shadow: 0 0 0 1px #f2c777; }
+/* 文书大标题编辑行 */
+.dt-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; padding: 7px 10px; margin-bottom: 12px;
+  background: #fdf9f0; border: 1px solid #f0e2c0; border-radius: 8px;
+}
+.dt-row .dt-label { flex-shrink: 0; font-weight: 600; color: #b8925e; }
+.dt-row .dt-text { flex: 1; outline: none; border-radius: 4px; padding: 1px 4px; font-weight: 600; color: var(--ink); cursor: text; }
+.dt-row .dt-text:focus { background: #fff; box-shadow: 0 0 0 1px #f2c777; }
 .clause {
   display: flex; align-items: flex-start; gap: 8px;
   padding: 8px; border-radius: 8px; margin-bottom: 5px;
