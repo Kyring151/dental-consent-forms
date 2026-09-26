@@ -703,7 +703,7 @@ function flowHtml(items) {
 
 /* 把勾选的章节组织为线性块（h2/meta 占位 + 每节 h3 + li + sign + foot） */
 function buildItems(tpl, sections) {
-  const footText = `模板 ${tpl.version} ・ 依据 2024–2025 年公开指南与专家共识整理，仅供本机构内部参考，正式使用前请由医务负责人审核`;
+  const footText = `依据 2025–2026 年公开指南与专家共识整理，仅供本机构内部参考，正式使用前请由医务负责人审核`;
   const items = [{ kind: 'h2', gap: tpl._titleGap || 0 }, { kind: 'meta' }];
   sections.forEach((sec, i) => {
     let title = sec.title;
@@ -1116,7 +1116,21 @@ $logoDel.onclick = () => {
 };
 
 /* ---------- 顶部按钮 ---------- */
-$btnPrint.onclick = () => window.print();
+/* 打印走与导出一致的固定分页：先生成 A4 整页到 #printWrap，
+   页脚精确贴到最后一页底部（连续长卷自然分页无法定位「末页底」） */
+const $printWrap = document.getElementById('printWrap');
+$btnPrint.onclick = () => {
+  const tpl = TEMPLATES.find(t => t.id === currentId);
+  if (!tpl) { toast('请先选择模板', true); return; }
+  const sections = collectDocData();
+  if (!sections.length) { toast('请先至少勾选一条条款', true); return; }
+  const items = buildItems(tpl, sections);
+  const fontStyle = `font-size:${fontCfg.size}px;color:${fontCfg.color};`;
+  const pages = paginateItems(items, fontStyle);
+  const total = pages.length;
+  $printWrap.innerHTML = pages.map((pg, pi) => sheetHtml(pg, pi, total, fontStyle)).join('');
+  window.print();
+};
 
 /* ---------- 物理分页（仅导出 PDF 用） ----------
  * 预览是连续长卷；导出时离屏量尺测高 → 297mm 贪心分页 → 每页一个条目数组。

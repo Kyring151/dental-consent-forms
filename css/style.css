@@ -209,13 +209,19 @@ body {
   max-height: 14mm; max-width: 42mm; object-fit: contain;
 }
 
-/* 诊所抬头信头：标题上方居中，名称加粗、地址/电话小字（全部留空则不渲染） */
-.clinic-head { text-align: center; margin-bottom: 2mm; }
+/* 诊所抬头：左上角小角标 —— 左对齐、左缘竖条徽记样式；名称加粗、地址/电话小字。
+   名称取到合适字号（不显小），只填了哪几项就显示哪几项；全部留空则不渲染 */
+.clinic-head {
+  position: relative; text-align: left; margin: 0 0 3mm;
+  padding: 1.5mm 2mm 1.5mm 3.2mm;
+  border-left: 1.1mm solid #333;
+  max-width: 96mm;
+}
 .clinic-head .clinic-name {
   font-family: "SimHei", "Microsoft YaHei", sans-serif; font-weight: 700;
-  font-size: 1.2em; letter-spacing: 3px;
+  font-size: 1.25em; letter-spacing: 2px; line-height: 1.35;
 }
-.clinic-head .clinic-sub { margin-top: 0.6mm; font-size: 0.8em; color: #333; }
+.clinic-head .clinic-sub { margin-top: 0.2mm; font-size: 0.82em; color: #333; line-height: 1.5; }
 .clinic-head .clinic-sub span + span::before { content: "　"; }
 
 /* 标题与公文装饰双线（em 单位，随正文字号联动缩放） */
@@ -398,16 +404,25 @@ body {
   text-align: center; backdrop-filter: blur(6px);
 }
 
-/* ---------- 打印：连续长卷由浏览器自然分页 ---------- */
+/* ---------- 打印：走 #printWrap 固定分页（与导出 PDF 的分页一致），
+   页脚 absolute 贴到最后一页底部；连续长卷预览在打印时隐藏 ---------- */
+#printWrap { display: none; }
+
 @media print {
   body { overflow: visible; height: auto; background: #fff; }
   .topbar, .panel, .foot { display: none !important; }
   .layout { display: block; padding: 0; }
-  .preview-wrap { padding: 0; overflow: visible; display: block; }
-  .doc { gap: 0; padding: 0; }
-  .sheet { box-shadow: none; margin: 0; min-height: 0; page-break-after: auto; }
-  .sheet h3, .sheet ol.clauses li, .sheet .sign .row { page-break-inside: avoid; }
-  .sheet ol.clauses li[data-row]:focus { outline: none; }
+  .preview-wrap { padding: 0; overflow: visible; display: none !important; }
+  #printWrap { display: block; }
+  #printWrap .sheet {
+    box-shadow: none; margin: 0 auto; position: relative;
+    width: 210mm; height: 297mm; min-height: 0; overflow: hidden;
+    border-radius: 0; page-break-after: always;
+  }
+  #printWrap .sheet:last-child { page-break-after: auto; }
+  #printWrap .foot-note {
+    position: absolute; bottom: 12mm; left: 20mm; right: 20mm; margin-top: 0;
+  }
   .page-mark, .col-handle { display: none !important; }
   @page { size: A4; margin: 0; }
 }
