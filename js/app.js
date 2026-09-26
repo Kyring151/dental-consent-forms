@@ -286,7 +286,7 @@ function buildLayoutSettings(tpl) {
     const inp = document.createElement('input');
     inp.type = 'text'; inp.value = clinicCfg[key]; inp.placeholder = ph;
     inp.className = 'ls-text-input';
-    inp.oninput = () => { clinicCfg[key] = inp.value; saveClinic(); };
+    inp.oninput = () => { clinicCfg[key] = inp.value; saveClinic(); scheduleRepaginate(); };
     row.appendChild(lab); row.appendChild(inp);
     return row;
   };
@@ -584,9 +584,8 @@ function collectDocData() {
 }
 
 /* ============================================================
- * 文档渲染管线（v20 起无物理分页：预览为连续长卷，打印走浏览器
- * 自然分页，导出为 Word 由 WPS/Word 自行分页）
- * 内容组织为线性块（h2/meta/h3/li/sign/foot）→ sheetHtml 一张白纸
+ * 文档渲染管线：内容组织为线性块（h2/meta/h3/li/sign/foot）→ 物理分页
+ * → sheetHtml 逐页生成 A4 白纸。预览 / 打印 / 导出 PDF 共用同一套分页
  * ============================================================ */
 
 /* 患者信息栏：按启用字段流动分排（每排 4 格），列宽支持预览中拖拽调整 */
@@ -716,17 +715,19 @@ function buildItems(tpl, sections) {
   return items;
 }
 
-/* 单张纸的 HTML（连续预览与导出分页共用）；pi===0 带页眉，total>1 带页脚页码 */
+/* 首页页眉：诊所抬头 + 文书大标题 + 患者信息栏（预览 / 打印 / 分页量尺共用同一份） */
+function headHtml(gap) {
+  let out = clinicHeadHtml();
+  for (let g = 0; g < (gap || 0); g++) out += '<div class="tgap" contenteditable="false"></div>';
+  out += `<h2 data-role="doctitle" contenteditable="true">${escapeHtml(activeTpl.docTitle)}</h2><div class="title-rule"></div>`;
+  if (logoData) out += `<img class="doc-logo" src="${logoData}" alt="" onerror="this.remove()">`;
+  return out + metaGridHtml();
+}
+
+/* 单张纸的 HTML（预览 / 打印 / 导出 PDF 共用）；pi===0 带页眉，total>1 带页码 */
 function sheetHtml(pgItems, pi, total, fontStyle) {
   let out = `<div class="sheet" style="${fontStyle}">`;
-  if (pi === 0) {
-    out += clinicHeadHtml();
-    for (let g = 0; g < ((pgItems[0] && pgItems[0].kind === 'h2' && pgItems[0].gap) || 0); g++)
-      out += '<div class="tgap" contenteditable="false"></div>';
-    out += `<h2 data-role="doctitle" contenteditable="true">${escapeHtml(activeTpl.docTitle)}</h2><div class="title-rule"></div>`;
-    if (logoData) out += `<img class="doc-logo" src="${logoData}" alt="" onerror="this.remove()">`;
-    out += metaGridHtml();
-  }
+  if (pi === 0) out += headHtml(pgItems[0] && pgItems[0].kind === 'h2' ? pgItems[0].gap : 0);
   out += flowHtml(pgItems);
   if (total > 1) {
     out += `<div class="page-mark">第 <span class="pm-num">${pi + 1}</span> 页` +
@@ -735,7 +736,7 @@ function sheetHtml(pgItems, pi, total, fontStyle) {
   return out + '</div>';
 }
 
-/* 预览 = 连续长卷：不切页、不裁剪，空格与回车自由排版（white-space: pre-wrap） */
+/* 预览 = 与打印/导出同一套物理分页：每页一张固定 A4 白纸，页间留缝 */
 function renderDoc(tpl) {
   const sections = collectDocData();
   if (!sections.length) {
@@ -744,34 +745,23 @@ function renderDoc(tpl) {
   }
   const items = buildItems(tpl, sections);
   const fontStyle = `font-size:${fontCfg.size}px;color:${fontCfg.color};`;
-  $doc.innerHTML = sheetHtml(items, 0, 1, fontStyle);
+  const pages = paginateItems(items, fontStyle);
+  const total = pages.length;
+  $doc.innerHTML = pages.map((pg, pi) => sheetHtml(pg, pi, total, fontStyle)).join('');
 }
 
 function escapeHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/* 预览回车 / 退格的场景 —
-   ・光标在条款最开头（序号之前 / 序号与正文之间）：序号+正文整体下移一行，
-     即在本条前插一个无编号空行；不触发重渲染，可连续回车插多行
+/* 预览回车 / 退格 —
+   ・条款内回车：在光标处换行（正文自由排版，不拆分条款），以 \n 存回草稿；
+     有选区时把插入点收到选区起点，让选中的文字整体换到下一行（不删字）
    ・光标掉在 ol 上（点到序号左侧等不可编区域，Chrome 会把光标放在 ol 层）：
-     按光标位置找到对应条款，整条下移
-   ・光标在条款最开头按 Backspace：删掉本条前面的一个空行（往回上退一行），无空行则不动
-   ・选中一段文字（非折叠选区）后回车：选中所在条款整体下移一行
+     按光标位置找到对应条款，在其开头换行
+   ・光标在条款最开头按 Backspace：删掉本条前面的一个空行（兼容旧草稿），无空行则不动
    ・光标在标题（文书大标题 / 各节标题）里：回车 = 在标题上方插一空行（标题不内部换行），
-     Backspace = 删掉标题上方一个空行
-   其余位置：条款内换行（不拆分条款），以 \n 存回草稿 */
-function insertBlankBefore(li) {
-  const blank = document.createElement('li');
-  blank.className = 'blank';
-  blank.contentEditable = 'false';
-  li.parentElement.insertBefore(blank, li);
-  const row = document.querySelector(
-    `#editor .clause[data-sec="${li.dataset.sec}"][data-idx="${li.dataset.row}"]`);
-  if (row) row.dataset.blanks = (parseInt(row.dataset.blanks) || 0) + 1;
-  saveDraft();
-}
-
+     Backspace = 删掉标题上方一个空行 */
 function removeBlankBefore(li) {
   const prev = li.previousElementSibling;
   if (!prev || !prev.classList.contains('blank')) return false;
@@ -861,31 +851,45 @@ $doc.addEventListener('keydown', e => {
     return;
   }
 
-  /* 选中一段文字（非折叠选区）后回车：选中所在条款整体下移一行 */
+  /* 条款内回车 = 在光标处换行；有选区则先收起点，让选中文字整体换到下一行 */
   const sel = getSelection();
-  if (li && sel.rangeCount && !sel.isCollapsed) {
-    insertBlankBefore(li);
+  if (li) {
+    if (sel.rangeCount && !sel.isCollapsed) {
+      const r = sel.getRangeAt(0);
+      const cr = document.createRange();
+      cr.setStart(r.startContainer, r.startOffset);
+      cr.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(cr);
+    }
+    document.execCommand('insertLineBreak');
+    syncFromLi(li);
+    scheduleRepaginate();
     return;
   }
 
-  if (!li) {
-    /* 光标在 ol 层：按 childNode 偏移找到它指向的条款，在其前面插空行 */
-    const off = sel.rangeCount ? sel.getRangeAt(0).startOffset : 0;
-    const kids = [...ol.children];
-    let target = null;
-    for (let k = Math.min(off, kids.length - 1); k >= 0 && k < kids.length; k++) {
-      if (kids[k].matches && kids[k].matches('li[data-row]')) { target = kids[k]; break; }
-    }
-    if (!target) {
-      const lis = ol.querySelectorAll('li[data-row]');
-      target = lis.length ? (off <= 0 ? lis[0] : lis[lis.length - 1]) : null;
-    }
-    if (target) insertBlankBefore(target);
-    return;
+  /* 光标在 ol 层：按 childNode 偏移找到对应条款，在其开头换行 */
+  const off = sel.rangeCount ? sel.getRangeAt(0).startOffset : 0;
+  const kids = [...ol.children];
+  let target = null;
+  for (let k = Math.min(off, kids.length - 1); k >= 0 && k < kids.length; k++) {
+    if (kids[k].matches && kids[k].matches('li[data-row]')) { target = kids[k]; break; }
   }
-
-  if (caretAtClauseStart(li)) insertBlankBefore(li);
-  else document.execCommand('insertLineBreak');
+  if (!target) {
+    const lis = ol.querySelectorAll('li[data-row]');
+    target = lis.length ? (off <= 0 ? lis[0] : lis[lis.length - 1]) : null;
+  }
+  if (target) {
+    target.focus();
+    const cr = document.createRange();
+    cr.setStart(target, 0);
+    cr.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(cr);
+    document.execCommand('insertLineBreak');
+    syncFromLi(target);
+    scheduleRepaginate();
+  }
 });
 
 /* 行内格式净化：只保留 b/i/u/br 和带白名单样式的 span，其余剥壳或丢弃
@@ -944,15 +948,81 @@ function syncFromLi(li) {
   t.parentElement.dataset.html = sanitizeHtml(html.replace(/<span class="num"[^>]*>[\s\S]*?<\/span>/, ''));
   saveDraft();   // 不在输入过程中重渲染，避免打断光标
 }
+
+/* ---------- 编辑后延迟重分页 ----------
+ * 预览按 A4 分页后，改字/换行可能让内容跨页，故停止输入后重排一次；
+ * 重排会重建 DOM，用「条款 + 字符偏移」把光标放回原处，避免打断连续输入 */
+let repagTimer = null;
+let composing = false;
+
+function captureCaret() {
+  const sel = getSelection();
+  if (!sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  const el = r.startContainer.nodeType === 3 ? r.startContainer.parentElement : r.startContainer;
+  const li = el && el.closest ? el.closest('li[data-row]') : null;
+  if (!li) return null;
+  const pre = document.createRange();
+  pre.selectNodeContents(li);
+  try { pre.setEnd(r.startContainer, r.startOffset); } catch { return null; }
+  const num = li.querySelector('.num');
+  const off = pre.toString().length - (num ? num.textContent.length : 0);
+  return { sec: li.dataset.sec, row: li.dataset.row, off: Math.max(0, off) };
+}
+
+function restoreCaret(c) {
+  if (!c) return;
+  const li = $doc.querySelector(`li[data-sec="${c.sec}"][data-row="${c.row}"]`);
+  if (!li) return;
+  li.focus();
+  const sel = getSelection();
+  const range = document.createRange();
+  let rest = c.off;
+  const walk = node => {
+    for (const ch of node.childNodes) {
+      if (ch.nodeType === 3) {
+        if (rest <= ch.textContent.length) { range.setStart(ch, rest); return true; }
+        rest -= ch.textContent.length;
+      } else if (ch.nodeType === 1) {
+        if (ch.classList && ch.classList.contains('num')) continue;
+        if (walk(ch)) return true;
+      }
+    }
+    return false;
+  };
+  if (walk(li)) range.collapse(true);
+  else { range.selectNodeContents(li); range.collapse(false); }
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function scheduleRepaginate() {
+  clearTimeout(repagTimer);
+  repagTimer = setTimeout(() => {
+    if (!activeTpl || composing) return;
+    const caret = captureCaret();
+    const scroller = $doc.parentElement;
+    const top = scroller ? scroller.scrollTop : 0;
+    renderDoc(activeTpl);
+    restoreCaret(caret);
+    if (scroller) scroller.scrollTop = top;
+  }, 450);
+}
+
+/* 中文输入法组字期间不重排，组字结束再排一次 */
+$doc.addEventListener('compositionstart', () => { composing = true; });
+$doc.addEventListener('compositionend', () => { composing = false; scheduleRepaginate(); });
+
 $doc.addEventListener('input', e => {
   const li = e.target.closest && e.target.closest('li[data-row]');
-  if (li) { syncFromLi(li); return; }
+  if (li) { syncFromLi(li); scheduleRepaginate(); return; }
   /* 预览标题直编 → 同步回左侧栏与草稿（不重渲染，避免打断光标） */
   const h2 = e.target.closest && e.target.closest('h2[data-role]');
   if (h2) {
     const dt = document.querySelector('#editor .dt-row .dt-text');
     if (dt) dt.textContent = h2.textContent;
     saveDraft();
+    scheduleRepaginate();
     return;
   }
   const h3 = e.target.closest && e.target.closest('h3[data-sec]');
@@ -969,6 +1039,7 @@ $doc.addEventListener('input', e => {
       if (h && h.textContent !== txt) h.textContent = txt;
     }
     saveDraft();
+    scheduleRepaginate();
   }
 });
 
@@ -1132,120 +1203,107 @@ $btnPrint.onclick = () => {
   window.print();
 };
 
-/* ---------- 物理分页（仅导出 PDF 用） ----------
- * 预览是连续长卷；导出时离屏量尺测高 → 297mm 贪心分页 → 每页一个条目数组。
- * 量尺只装 flowHtml(items)（h2/meta 不占位），按标签+数量逐个核对，避免错位 */
+/* ---------- 物理分页（预览 / 打印 / 导出 PDF 共用） ----------
+ * 在一张离屏 A4 白纸上逐条试排：摆一条量一次，超出纸高就收回、翻页。
+ * 以真实渲染为准（不做高度估算），行高 / 外边距误差不会再让内容挤出纸外，
+ * 所以预览的分页与打印、导出完全一致 */
 function paginateItems(items, fontStyle) {
-  const offscreen = 'position:absolute;left:-99999px;top:0;visibility:hidden;';
-  // 页眉块（h2+rule+信息栏）单独测高，对应 items[0]/[1]
-  const head = document.createElement('div');
-  head.className = 'sheet measurer';
-  head.style.cssText = offscreen + fontStyle;
-  head.innerHTML = clinicHeadHtml() + `<h2>${escapeHtml(activeTpl.docTitle)}</h2><div class="title-rule"></div>` + metaGridHtml();
-  document.body.appendChild(head);
-  const heights = new Array(items.length);
-  heights[0] = [...head.children].reduce((sum, el) => sum + el.offsetHeight, 0);
-  heights[1] = 0;
-  head.remove();
+  const host = document.createElement('div');
+  host.className = 'sheet';
+  host.style.cssText =
+    'position:absolute;left:-99999px;top:0;visibility:hidden;' +
+    'height:297mm;min-height:0;overflow:hidden;' + fontStyle;
+  document.body.appendChild(host);
 
-  // 正文量尺：只装 flowHtml 的输出，子元素与条目一一对应
-  const meas = document.createElement('div');
-  meas.className = 'sheet measurer';
-  meas.style.cssText = offscreen + fontStyle;
-  meas.innerHTML = flowHtml(items);
-  document.body.appendChild(meas);
+  /* 样式未就绪时量不出纸高，退回整卷一页，免得误判成「每条一页」 */
+  if (host.clientHeight < 100) { host.remove(); return [items]; }
 
-  const expectList = [];
-  for (let i = 2; i < items.length; i++) {
-    const it = items[i];
-    if (it.kind === 'li') {
-      if (items[i - 1].kind !== 'li' || items[i - 1].olKey !== it.olKey) {
-        expectList.push({ type: 'ol', start: i });
-      }
-    } else {
-      expectList.push({ type: 'el', index: i });
-    }
-  }
-
-  const cs = getComputedStyle(meas);
-  const pxPerMm = meas.clientWidth / 210;
-  const pageH = 297 * pxPerMm - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-  const els = [...meas.children];
-  let pos = 0, ok = true;
-  for (const ex of expectList) {
-    if (ex.type === 'ol') {
-      const el = els[pos++];
-      if (!el || el.tagName !== 'OL') { ok = false; break; }
-      const lis = [...el.children];
-      let cnt = 0;
-      while (ex.start + cnt < items.length && items[ex.start + cnt].kind === 'li') cnt++;
-      let need = 0;
-      for (let k = 0; k < cnt; k++) need += 1 + (items[ex.start + k].blanks || 0);
-      if (lis.length !== need) { ok = false; break; }
-      let p = 0;
-      for (let k = 0; k < cnt; k++) {
-        heights[ex.start + k] = lis[p++].offsetHeight;
-        for (let b = 0; b < (items[ex.start + k].blanks || 0); b++) {
-          heights[ex.start + k] += lis[p++].offsetHeight;
-        }
-      }
-    } else {
-      const it = items[ex.index];
-      const need = 1 + (it.kind === 'h3' || it.kind === 'h3cont' ? (it.gap || 0) : 0);
-      if (pos + need > els.length) { ok = false; break; }
-      let h = 0;
-      for (let k = 0; k < need; k++) h += els[pos + k].offsetHeight;
-      pos += need;
-      heights[ex.index] = h;
-    }
-  }
-  if (ok && pos !== els.length) ok = false;
-  // 续页标题高度
-  const probe = document.createElement('h3');
-  probe.className = 'cont'; probe.textContent = '测（续）';
-  meas.appendChild(probe);
-  const contH = probe.offsetHeight;
-  probe.remove();
-  meas.remove();
-
-  if (!ok) return [items];   // 测量失败兜底：整卷一页
-
-  const TOL = 8; // 安全余量（px），宁可早翻页也不挤爆
+  const over = () => host.scrollHeight > host.clientHeight + 1;
   const secTitle = {};
   items.forEach(it => { if (it.kind === 'h3') secTitle[it.olKey] = it.title; });
 
-  const pages = [];
-  let pg = [], curH = 0;
-  const headerOf = key => x => (x.kind === 'h3' || x.kind === 'h3cont') && x.olKey === key;
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    /* h3 与其首条 li 视为一个整体：都放不下就先翻页，避免「标题孤立页底、内容跑下一页」 */
-    if (it.kind === 'h3' && i + 1 < items.length &&
-        items[i + 1].kind === 'li' && items[i + 1].olKey === it.olKey) {
-      if (pg.length > 0 && curH + heights[i] + heights[i + 1] > pageH - TOL) {
-        pages.push(pg); pg = []; curH = 0;
-      }
-    }
-    if (it.kind === 'li') {
-      /* 先按「本页是否已有该节标题」决定翻页时机，再在（可能全新的）页面上补标题 —
-         顺序不能反：先补标题再翻页会把标题插到条款后面 */
-      const need = pg.some(headerOf(it.olKey)) ? 0 : contH;
-      if (pg.length > 0 && curH + need + heights[i] > pageH - TOL) {
-        pages.push(pg); pg = []; curH = 0;
-      }
-      if (!pg.some(headerOf(it.olKey))) {
-        pg.push({ kind: 'h3cont', title: secTitle[it.olKey] + '（续）', olKey: it.olKey });
-        curH += contH;
-      }
-    } else if (pg.length > 0 && curH + heights[i] > pageH - TOL) {
-      pages.push(pg); pg = []; curH = 0;
-    }
-    pg.push(it); curH += heights[i];
-    if (heights[i] > pageH - TOL) { pages.push(pg); pg = []; curH = 0; }
-  }
-  if (pg.length) pages.push(pg);
-  return pages.filter(p => p.length);
+  const mk = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
+  const liEl = c => {
+    const li = mk('li', c.key ? 'key' : '');
+    if (c.style) li.setAttribute('style',
+      (c.style.size ? `font-size:${c.style.size}px;` : '') + (c.style.color ? `color:${c.style.color};` : ''));
+    li.dataset.sec = c.olKey; li.dataset.row = c.row; li.contentEditable = 'true';
+    const num = mk('span', 'num');
+    num.contentEditable = 'false'; num.textContent = c.seq + '.';
+    li.appendChild(num);
+    li.insertAdjacentHTML('beforeend',
+      c.html ? stripInlineFontSize(c.html) : escapeHtml(c.text).replace(/\n/g, '<br>'));
+    return li;
+  };
 
+  const pages = [];
+  let pg = [], ol = null, olKey = null, secs = new Set();
+
+  /* 把一组条目摆到当前页（h3 / h3cont 与本节首条 li 视为一个整体） */
+  const place = group => {
+    group.forEach(g => {
+      if (g.kind === 'h3' || g.kind === 'h3cont') {
+        for (let k = 0; k < (g.gap || 0); k++) {
+          const d = mk('div', 'tgap'); d.contentEditable = 'false'; host.appendChild(d);
+        }
+        const h = mk('h3', g.kind === 'h3cont' ? 'cont' : '');
+        h.contentEditable = 'true'; h.dataset.sec = g.olKey; h.textContent = g.title;
+        host.appendChild(h);
+        secs.add(g.olKey); ol = null; olKey = null;
+      } else if (g.kind === 'li') {
+        if (!ol || olKey !== g.olKey) {
+          ol = mk('ol', 'clauses'); host.appendChild(ol); olKey = g.olKey;
+        }
+        for (let b = 0; b < (g.blanks || 0); b++) {
+          const bl = mk('li', 'blank'); bl.contentEditable = 'false'; ol.appendChild(bl);
+        }
+        ol.appendChild(liEl(g));
+      } else if (g.kind === 'sign') {
+        const box = mk('div');
+        box.innerHTML = signHtml();
+        if (box.firstElementChild) host.appendChild(box.firstElementChild);
+      }
+    });
+  };
+
+  host.insertAdjacentHTML('beforeend', headHtml(items[0] && items[0].kind === 'h2' ? items[0].gap : 0));
+  items.slice(0, 2).forEach(it => { if (it.kind === 'h2' || it.kind === 'meta') pg.push(it); });
+
+  for (let i = 2; i < items.length; i++) {
+    const it = items[i];
+    if (it.kind === 'foot') continue;   // 页脚 absolute 贴页底，最后统一放到末页
+    /* 组内条目：h3 与本节首条 li 绑成一个整体，避免「标题孤零零留在页底、内容跑下一页」；
+       断页续排的条款，先在组头补一条「（续）」标题（既进试排 DOM，也进本页条目数组） */
+    const build = () => {
+      if (it.kind === 'h3') {
+        const nx = items[i + 1];
+        return (nx && nx.kind === 'li' && nx.olKey === it.olKey) ? [it, nx] : [it];
+      }
+      if (it.kind === 'li' && !secs.has(it.olKey)) {
+        return [{ kind: 'h3cont', title: secTitle[it.olKey] + '（续）', olKey: it.olKey }, it];
+      }
+      return [it];
+    };
+    let group = build();
+    const paired = group.length === 2 && group[0].kind === 'h3';
+    place(group);
+    if (over()) {   // 本页放不下 → 翻页重排（新页会自动补「（续）」标题）
+      pages.push(pg);
+      pg = []; ol = null; olKey = null; secs = new Set();
+      host.innerHTML = '';
+      group = build();
+      place(group);
+    }
+    pg.push(...group);
+    if (paired) i++;
+  }
+  pages.push(pg);
+
+  const out = pages.filter(p => p.length);
+  const foot = items.filter(it => it.kind === 'foot');
+  if (out.length) out[out.length - 1].push(...foot);
+  host.remove();
+  return out.length ? out : [items];
 }
 
 $btnPdf.onclick = async () => {

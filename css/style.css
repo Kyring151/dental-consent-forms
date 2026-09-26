@@ -209,6 +209,11 @@ body {
   max-height: 14mm; max-width: 42mm; object-fit: contain;
 }
 
+/* 预览与打印同版式：每张白纸固定 A4 高、超出部分裁剪；末页页脚贴纸底
+   （打印时页码是隐藏的，预览同样不显示，保证所见即所得） */
+#doc .sheet { height: 297mm; min-height: 0; overflow: hidden; }
+#doc .sheet .foot-note { position: absolute; bottom: 12mm; left: 20mm; right: 20mm; margin-top: 0; }
+
 /* 诊所抬头：右上角小角标 —— 右对齐、右缘竖条徽记样式；名称加粗、地址/电话小字。
    名称取到合适字号（不显小），只填了哪几项就显示哪几项；全部留空则不渲染 */
 .clinic-head {
