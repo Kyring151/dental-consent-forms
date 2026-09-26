@@ -38,7 +38,14 @@ const TPL_ICONS = {
   'implant': 'assets/icons/implant_s.jpg',
   'whitening': 'assets/icons/white_s.jpg',
   'peds': 'assets/icons/peds_s.jpg',
-  'xray': 'assets/icons/xray_s.jpg'
+  'xray': 'assets/icons/xray_s.jpg',
+  'perio': 'assets/icons/perio_s.jpg',
+  'rpd': 'assets/icons/rpd_s.jpg',
+  'aligner': 'assets/icons/aligner_s.jpg',
+  'veneer': 'assets/icons/veneer_s.jpg',
+  'rootsurg': 'assets/icons/rootsurg_s.jpg',
+  'prevention': 'assets/icons/prevention_s.jpg',
+  'oral-surgery': 'assets/icons/oralsurg_s.jpg'
 };
 
 const CN_NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
@@ -146,7 +153,7 @@ function buildLayoutSettings(tpl) {
     ? draft.layout.meta
     : (myLayout && Array.isArray(myLayout.meta) && myLayout.meta.length)
       ? myLayout.meta
-      : DEFAULT_META_FIELDS.map(f => ({ label: f.label, on: true, w: f.w }));
+      : (tpl.meta || DEFAULT_META_FIELDS).map(f => ({ label: f.label, on: true, w: f.w }));
   const sign = (draft && draft.layout && Array.isArray(draft.layout.sign) && draft.layout.sign.length)
     ? draft.layout.sign
     : (myLayout && Array.isArray(myLayout.sign) && myLayout.sign.length)
@@ -266,6 +273,27 @@ function buildLayoutSettings(tpl) {
   funit.className = 'ls-unit'; funit.textContent = 'px';
   frow.appendChild(fsize); frow.appendChild(funit); frow.appendChild(fcolor);
   g3.appendChild(frow);
+
+  /* 诊所抬头：三项都留空则不显示；填写后在文书首页标题上方成信头 */
+  const g5 = document.createElement('div');
+  g5.className = 'ls-group';
+  g5.innerHTML = '<div class="ls-head">诊所抬头<span class="hint-inline">留空则不显示，填写后印在文书首页顶部</span></div>';
+  const mkClinic = (key, label, ph) => {
+    const row = document.createElement('div');
+    row.className = 'ls-row ls-clinic';
+    const lab = document.createElement('span');
+    lab.className = 'ls-cspan'; lab.textContent = label;
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = clinicCfg[key]; inp.placeholder = ph;
+    inp.className = 'ls-text-input';
+    inp.oninput = () => { clinicCfg[key] = inp.value; saveClinic(); };
+    row.appendChild(lab); row.appendChild(inp);
+    return row;
+  };
+  g5.appendChild(mkClinic('name', '名称', '如：××口腔诊所'));
+  g5.appendChild(mkClinic('addr', '地址', '诊所地址（留空不显示）'));
+  g5.appendChild(mkClinic('tel', '电话', '联系电话（留空不显示）'));
+  wrap.appendChild(g5);
 
   /* 默认版式与重置 */
   const g4 = document.createElement('div');
@@ -692,6 +720,7 @@ function buildItems(tpl, sections) {
 function sheetHtml(pgItems, pi, total, fontStyle) {
   let out = `<div class="sheet" style="${fontStyle}">`;
   if (pi === 0) {
+    out += clinicHeadHtml();
     for (let g = 0; g < ((pgItems[0] && pgItems[0].kind === 'h2' && pgItems[0].gap) || 0); g++)
       out += '<div class="tgap" contenteditable="false"></div>';
     out += `<h2 data-role="doctitle" contenteditable="true">${escapeHtml(activeTpl.docTitle)}</h2><div class="title-rule"></div>`;
@@ -988,6 +1017,31 @@ document.addEventListener('selectionchange', () => {
  * 限制：仅 PNG/JPEG，原图 ≤ 2MB；上传后等比缩至最长边 400px 再存 localStorage，
  * 存储体积约 200KB 以内，避免撑爆 ~5MB 的本地配额。
  * ------------------------------------------------------------ */
+/* 诊所抬头信息（全局）：填写名称/地址/电话后在文书首页标题上方成信头显示，留空则不显示 */
+const CLINIC_KEY = 'cb_clinic';
+let clinicCfg = { name: '', addr: '', tel: '' };
+try {
+  const saved = JSON.parse(localStorage.getItem(CLINIC_KEY) || 'null');
+  if (saved && typeof saved === 'object') {
+    clinicCfg = { name: String(saved.name || ''), addr: String(saved.addr || ''), tel: String(saved.tel || '') };
+  }
+} catch { /* 用默认 */ }
+function saveClinic() {
+  localStorage.setItem(CLINIC_KEY, JSON.stringify(clinicCfg));
+  renderDoc(activeTpl);
+}
+/* 诊所信头：三项都空则不渲染；只填了哪几项就显示哪几项 */
+function clinicHeadHtml() {
+  if (!clinicCfg.name && !clinicCfg.addr && !clinicCfg.tel) return '';
+  let out = '<div class="clinic-head">';
+  if (clinicCfg.name) out += `<div class="clinic-name">${escapeHtml(clinicCfg.name)}</div>`;
+  const sub = [];
+  if (clinicCfg.addr) sub.push(`<span>${escapeHtml(clinicCfg.addr)}</span>`);
+  if (clinicCfg.tel) sub.push(`<span>${escapeHtml(clinicCfg.tel)}</span>`);
+  if (sub.length) out += `<div class="clinic-sub">${sub.join('')}</div>`;
+  return out + '</div>';
+}
+
 const LOGO_KEY = 'cb_logo';
 const LOGO_MAX_RAW = 2 * 1024 * 1024;   // 原图 2MB
 const LOGO_MAX_SIDE = 400;              // 存储尺寸上限（px）
@@ -1073,7 +1127,7 @@ function paginateItems(items, fontStyle) {
   const head = document.createElement('div');
   head.className = 'sheet measurer';
   head.style.cssText = offscreen + fontStyle;
-  head.innerHTML = `<h2>${escapeHtml(activeTpl.docTitle)}</h2><div class="title-rule"></div>` + metaGridHtml();
+  head.innerHTML = clinicHeadHtml() + `<h2>${escapeHtml(activeTpl.docTitle)}</h2><div class="title-rule"></div>` + metaGridHtml();
   document.body.appendChild(head);
   const heights = new Array(items.length);
   heights[0] = [...head.children].reduce((sum, el) => sum + el.offsetHeight, 0);
