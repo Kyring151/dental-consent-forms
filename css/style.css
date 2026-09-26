@@ -209,12 +209,12 @@ body {
   max-height: 14mm; max-width: 42mm; object-fit: contain;
 }
 
-/* 诊所抬头：左上角小角标 —— 左对齐、左缘竖条徽记样式；名称加粗、地址/电话小字。
+/* 诊所抬头：右上角小角标 —— 右对齐、右缘竖条徽记样式；名称加粗、地址/电话小字。
    名称取到合适字号（不显小），只填了哪几项就显示哪几项；全部留空则不渲染 */
 .clinic-head {
-  position: relative; text-align: left; margin: 0 0 3mm;
-  padding: 1.5mm 2mm 1.5mm 3.2mm;
-  border-left: 1.1mm solid #333;
+  position: relative; text-align: right; margin: 0 0 3mm auto;
+  padding: 1.5mm 3.2mm 1.5mm 2mm;
+  border-right: 1.1mm solid #333;
   max-width: 96mm;
 }
 .clinic-head .clinic-name {
