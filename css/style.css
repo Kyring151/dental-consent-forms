@@ -333,8 +333,14 @@ body {
 /* 预览条款可直编的 affordance：文本光标 + 聚焦虚线框（打印不显示） */
 .sheet ol.clauses li[data-row] { cursor: text; }
 .sheet ol.clauses li[data-row]:focus { outline: 1px dashed #b7c4ce; outline-offset: 2px; }
-.sheet .sign { margin-top: 8mm; font-size: 1em; }
-.sheet .sign .row { display: flex; align-items: flex-end; margin-bottom: 6mm; gap: 2mm; }
+/* 签字区：绝对定位锚在纸的下方空白区（页脚上方），不参与正文流 ——
+   正文压不到它就留在本页，不会被挤到新的一页单独成页 */
+.sheet .sign {
+  position: absolute; left: 20mm; right: 20mm; bottom: 20mm;
+  margin-top: 0; font-size: 1em;
+}
+.sheet .sign .row { display: flex; align-items: flex-end; margin-bottom: 2mm; gap: 2mm; }
+.sheet .sign .row:last-child { margin-bottom: 0; }
 .sheet .sign .row .line { border-bottom: 1px solid #111; display: inline-block; height: 6mm; }
 .sheet .foot-note {
   margin-top: 8mm;

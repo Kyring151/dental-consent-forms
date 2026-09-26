@@ -1258,12 +1258,26 @@ function paginateItems(items, fontStyle) {
           const bl = mk('li', 'blank'); bl.contentEditable = 'false'; ol.appendChild(bl);
         }
         ol.appendChild(liEl(g));
-      } else if (g.kind === 'sign') {
-        const box = mk('div');
-        box.innerHTML = signHtml();
-        if (box.firstElementChild) host.appendChild(box.firstElementChild);
       }
     });
+  };
+
+  /* 签字区在样式里绝对定位在纸的下方空白区，不占正文流，所以不能用 over() 判断：
+     把它摆进试排页后，看正文底边有没有压到它的顶边，没压到就留在本页 */
+  const placeSign = () => {
+    const box = mk('div');
+    box.innerHTML = signHtml();
+    if (!box.firstElementChild) return null;
+    host.appendChild(box.firstElementChild);
+    return host.lastElementChild;
+  };
+  const flowBottom = () => {
+    let bottom = 0;
+    for (const el of host.children) {
+      if (getComputedStyle(el).position === 'absolute') continue;
+      bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+    }
+    return bottom;
   };
 
   host.insertAdjacentHTML('beforeend', headHtml(items[0] && items[0].kind === 'h2' ? items[0].gap : 0));
@@ -1272,6 +1286,16 @@ function paginateItems(items, fontStyle) {
   for (let i = 2; i < items.length; i++) {
     const it = items[i];
     if (it.kind === 'foot') continue;   // 页脚 absolute 贴页底，最后统一放到末页
+    if (it.kind === 'sign') {           // 签字区锚在纸的下方空白区，正文压不到就留在本页
+      const signEl = placeSign();
+      if (signEl && flowBottom() > signEl.getBoundingClientRect().top) {
+        pages.push(pg); pg = []; ol = null; olKey = null; secs = new Set();
+        host.innerHTML = '';
+        placeSign();
+      }
+      pg.push(it);
+      continue;
+    }
     /* 组内条目：h3 与本节首条 li 绑成一个整体，避免「标题孤零零留在页底、内容跑下一页」；
        断页续排的条款，先在组头补一条「（续）」标题（既进试排 DOM，也进本页条目数组） */
     const build = () => {
