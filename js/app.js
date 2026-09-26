@@ -684,10 +684,10 @@ function flowHtml(items) {
       }
       html += '</ol>';
       i = j;
-    } else if (it.kind === 'h3' || it.kind === 'h3cont') {
+    } else if (it.kind === 'h3') {
       for (let g = 0; g < (it.gap || 0); g++)
         html += '<div class="tgap" contenteditable="false"></div>';
-      html += `<h3${it.kind === 'h3cont' ? ' class="cont"' : ''} data-sec="${it.olKey}" contenteditable="true">${escapeHtml(it.title)}</h3>`;
+      html += `<h3 data-sec="${it.olKey}" contenteditable="true">${escapeHtml(it.title)}</h3>`;
       i++;
     } else if (it.kind === 'sign') {
       html += signHtml(); i++;
@@ -1219,8 +1219,6 @@ function paginateItems(items, fontStyle) {
   if (host.clientHeight < 100) { host.remove(); return [items]; }
 
   const over = () => host.scrollHeight > host.clientHeight + 1;
-  const secTitle = {};
-  items.forEach(it => { if (it.kind === 'h3') secTitle[it.olKey] = it.title; });
 
   const mk = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
   const liEl = c => {
@@ -1237,19 +1235,19 @@ function paginateItems(items, fontStyle) {
   };
 
   const pages = [];
-  let pg = [], ol = null, olKey = null, secs = new Set();
+  let pg = [], ol = null, olKey = null;
 
-  /* 把一组条目摆到当前页（h3 / h3cont 与本节首条 li 视为一个整体） */
+  /* 把一组条目摆到当前页（h3 与本节首条 li 视为一个整体） */
   const place = group => {
     group.forEach(g => {
-      if (g.kind === 'h3' || g.kind === 'h3cont') {
+      if (g.kind === 'h3') {
         for (let k = 0; k < (g.gap || 0); k++) {
           const d = mk('div', 'tgap'); d.contentEditable = 'false'; host.appendChild(d);
         }
-        const h = mk('h3', g.kind === 'h3cont' ? 'cont' : '');
+        const h = mk('h3');
         h.contentEditable = 'true'; h.dataset.sec = g.olKey; h.textContent = g.title;
         host.appendChild(h);
-        secs.add(g.olKey); ol = null; olKey = null;
+        ol = null; olKey = null;
       } else if (g.kind === 'li') {
         if (!ol || olKey !== g.olKey) {
           ol = mk('ol', 'clauses'); host.appendChild(ol); olKey = g.olKey;
@@ -1289,31 +1287,27 @@ function paginateItems(items, fontStyle) {
     if (it.kind === 'sign') {           // 签字区锚在纸的下方空白区，正文压不到就留在本页
       const signEl = placeSign();
       if (signEl && flowBottom() > signEl.getBoundingClientRect().top) {
-        pages.push(pg); pg = []; ol = null; olKey = null; secs = new Set();
+        pages.push(pg); pg = []; ol = null; olKey = null;
         host.innerHTML = '';
         placeSign();
       }
       pg.push(it);
       continue;
     }
-    /* 组内条目：h3 与本节首条 li 绑成一个整体，避免「标题孤零零留在页底、内容跑下一页」；
-       断页续排的条款，先在组头补一条「（续）」标题（既进试排 DOM，也进本页条目数组） */
+    /* 组内条目：h3 与本节首条 li 绑成一个整体，避免「标题孤零零留在页底、内容跑下一页」 */
     const build = () => {
       if (it.kind === 'h3') {
         const nx = items[i + 1];
         return (nx && nx.kind === 'li' && nx.olKey === it.olKey) ? [it, nx] : [it];
-      }
-      if (it.kind === 'li' && !secs.has(it.olKey)) {
-        return [{ kind: 'h3cont', title: secTitle[it.olKey] + '（续）', olKey: it.olKey }, it];
       }
       return [it];
     };
     let group = build();
     const paired = group.length === 2 && group[0].kind === 'h3';
     place(group);
-    if (over()) {   // 本页放不下 → 翻页重排（新页会自动补「（续）」标题）
+    if (over()) {   // 本页放不下 → 翻页重排
       pages.push(pg);
-      pg = []; ol = null; olKey = null; secs = new Set();
+      pg = []; ol = null; olKey = null;
       host.innerHTML = '';
       group = build();
       place(group);

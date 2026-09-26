@@ -322,7 +322,6 @@ body {
   font-size: 1.08em; margin: 4.5mm 0 1.5mm;
   font-family: "SimHei", "Microsoft YaHei", sans-serif; font-weight: 700; letter-spacing: 1px;
 }
-.sheet h3.cont { color: #444; font-size: 0.96em; }
 .sheet ol.clauses { list-style: none; padding-left: 1mm; }
 .sheet ol.clauses li { position: relative; padding-left: 7mm; margin-bottom: 1.2mm; text-align: justify; }
 .sheet ol.clauses li .num { position: absolute; left: 0; }
