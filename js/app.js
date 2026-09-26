@@ -360,7 +360,7 @@ function renderTplList() {
   TEMPLATES.forEach(tpl => {
     const el = document.createElement('div');
     el.className = 'tpl-item' + (tpl.id === currentId ? ' active' : '');
-    el.innerHTML = `<span class="tpl-name"><img class="tpl-icon" src="${TPL_ICONS[tpl.id] || ''}" alt="" onerror="this.style.display='none'"><span>${tpl.name}</span></span><span class="tpl-ver">${tpl.version}</span>`;
+    el.innerHTML = `<span class="tpl-name"><img class="tpl-icon" src="${TPL_ICONS[tpl.id] ? TPL_ICONS[tpl.id] + '?v=26' : ''}" alt="" onerror="this.style.display='none'"><span>${tpl.name}</span></span><span class="tpl-ver">${tpl.version}</span>`;
     el.onclick = () => selectTemplate(tpl.id);
     $tplList.appendChild(el);
   });
