@@ -338,6 +338,8 @@ body {
   position: absolute; left: 20mm; right: 20mm; bottom: 20mm;
   margin-top: 0; font-size: 1em;
 }
+/* 紧贴正文的签字区（部分项目）：脱离绝对定位、参与正文流，随正文长度上下移动 */
+.sheet .sign.flow { position: static; margin-top: 4mm; }
 .sheet .sign .row { display: flex; align-items: flex-end; margin-bottom: 2mm; gap: 2mm; }
 .sheet .sign .row:last-child { margin-bottom: 0; }
 .sheet .sign .row .line { border-bottom: 1px solid #111; display: inline-block; height: 6mm; }

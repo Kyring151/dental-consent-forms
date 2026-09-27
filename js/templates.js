@@ -117,6 +117,7 @@ const TEMPLATES = [
     id: 'extraction',
     name: '牙及智齿拔除',
     docTitle: '牙拔除术知情同意书',
+    signFlow: true,
     meta: [
       { label: '患者姓名', w: 30 }, { label: '性别', w: 12 }, { label: '年龄', w: 12 }, { label: '病历号', w: 46 },
       { label: '科室', w: 16 }, { label: '诊断', w: 30 }, { label: '拔牙牙位', w: 28 }, { label: '联系电话', w: 26 }
@@ -230,6 +231,7 @@ const TEMPLATES = [
     id: 'ortho',
     name: '牙齿正畸矫治',
     docTitle: '口腔正畸治疗知情同意书',
+    signFlow: true,
     meta: [
       { label: '患者姓名', w: 30 }, { label: '性别', w: 12 }, { label: '年龄', w: 12 }, { label: '病历号', w: 46 },
       { label: '科室', w: 16 }, { label: '诊断', w: 30 }, { label: '矫治牙位', w: 28 }, { label: '联系电话', w: 26 }
@@ -332,6 +334,7 @@ const TEMPLATES = [
     id: 'whitening',
     name: '牙齿美白漂白',
     docTitle: '牙齿美白（漂白）治疗知情同意书',
+    signFlow: true,
     meta: [
       { label: '患者姓名', w: 30 }, { label: '性别', w: 12 }, { label: '年龄', w: 12 }, { label: '病历号', w: 46 },
       { label: '科室', w: 16 }, { label: '诊断', w: 30 }, { label: '美白牙位', w: 28 }, { label: '联系电话', w: 26 }
@@ -380,6 +383,7 @@ const TEMPLATES = [
     id: 'peds',
     name: '儿童口腔治疗',
     docTitle: '儿童口腔治疗知情同意书',
+    signFlow: true,
     meta: [
       { label: '患儿姓名', w: 28 }, { label: '性别', w: 12 }, { label: '年龄', w: 12 }, { label: '病历号', w: 48 },
       { label: '监护人', w: 20 }, { label: '诊断', w: 30 }, { label: '患牙牙位', w: 26 }, { label: '联系电话', w: 24 }
@@ -428,6 +432,7 @@ const TEMPLATES = [
     id: 'xray',
     name: '口腔放射检查',
     docTitle: '口腔放射检查知情同意书',
+    signFlow: true,
     meta: [
       { label: '患者姓名', w: 30 }, { label: '性别', w: 12 }, { label: '年龄', w: 12 }, { label: '病历号', w: 46 },
       { label: '科室', w: 16 }, { label: '诊断', w: 30 }, { label: '检查牙位', w: 28 }, { label: '联系电话', w: 26 }
@@ -525,6 +530,7 @@ const TEMPLATES = [
     id: 'rpd',
     name: '可摘义齿修复',
     docTitle: '可摘（活动）义齿修复知情同意书',
+    signFlow: true,
     meta: [
       { label: '患者姓名', w: 30 }, { label: '性别', w: 12 }, { label: '年龄', w: 12 }, { label: '病历号', w: 46 },
       { label: '科室', w: 16 }, { label: '诊断', w: 30 }, { label: '缺牙牙位', w: 28 }, { label: '联系电话', w: 26 }
@@ -631,6 +637,7 @@ const TEMPLATES = [
     id: 'veneer',
     name: '瓷贴面微创修复',
     docTitle: '瓷贴面微创美学修复知情同意书',
+    signFlow: true,
     meta: [
       { label: '患者姓名', w: 30 }, { label: '性别', w: 12 }, { label: '年龄', w: 12 }, { label: '病历号', w: 46 },
       { label: '科室', w: 16 }, { label: '诊断', w: 30 }, { label: '修复牙位', w: 28 }, { label: '联系电话', w: 26 }
@@ -684,6 +691,7 @@ const TEMPLATES = [
     id: 'rootsurg',
     name: '根尖手术',
     docTitle: '根尖手术（根尖切除术）知情同意书',
+    signFlow: true,
     meta: [
       { label: '患者姓名', w: 30 }, { label: '性别', w: 12 }, { label: '年龄', w: 12 }, { label: '病历号', w: 46 },
       { label: '科室', w: 16 }, { label: '诊断', w: 30 }, { label: '手术牙位', w: 28 }, { label: '联系电话', w: 26 }
@@ -737,6 +745,7 @@ const TEMPLATES = [
     id: 'prevention',
     name: '窝沟封闭与涂氟',
     docTitle: '窝沟封闭与涂氟防龋知情同意书',
+    signFlow: true,
     meta: [
       { label: '患儿姓名', w: 28 }, { label: '性别', w: 12 }, { label: '年龄', w: 12 }, { label: '病历号', w: 48 },
       { label: '监护人', w: 20 }, { label: '诊断', w: 30 }, { label: '患牙牙位', w: 26 }, { label: '联系电话', w: 24 }
@@ -789,6 +798,7 @@ const TEMPLATES = [
     id: 'oral-surgery',
     name: '口腔门诊小手术',
     docTitle: '口腔门诊小手术知情同意书',
+    signFlow: true,
     meta: [
       { label: '患者姓名', w: 30 }, { label: '性别', w: 12 }, { label: '年龄', w: 12 }, { label: '病历号', w: 46 },
       { label: '科室', w: 16 }, { label: '诊断', w: 30 }, { label: '手术部位', w: 28 }, { label: '联系电话', w: 26 }

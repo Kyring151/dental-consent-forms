@@ -651,10 +651,10 @@ $doc.addEventListener('pointerdown', e => {
   handle.addEventListener('pointerup', onUp);
 });
 
-function signHtml() {
+function signHtml(flow) {
   const rows = collectLayout().sign.filter(s => s.on);
   if (!rows.length) return '';
-  let html = '<div class="sign">';
+  let html = `<div class="sign${flow ? ' flow' : ''}">`;
   rows.forEach(s => {
     html += s.line > 0
       ? `<div class="row"><span>${escapeHtml(s.label)}</span><span class="line" style="width:${s.line}mm"></span></div>`
@@ -690,7 +690,7 @@ function flowHtml(items) {
       html += `<h3 data-sec="${it.olKey}" contenteditable="true">${escapeHtml(it.title)}</h3>`;
       i++;
     } else if (it.kind === 'sign') {
-      html += signHtml(); i++;
+      html += signHtml(it.flow); i++;
     } else if (it.kind === 'foot') {
       html += `<div class="foot-note">${escapeHtml(it.text)}</div>`; i++;
     } else {
@@ -711,7 +711,7 @@ function buildItems(tpl, sections) {
     items.push({ kind: 'h3', title, olKey: i, gap: sec.gap || 0 });
     sec.clauses.forEach((c, n) => items.push({ kind: 'li', olKey: i, row: c.row, seq: n + 1, key: !!c.key, text: c.text, style: c.style, html: c.html, blanks: c.blanks || 0 }));
   });
-  items.push({ kind: 'sign' }, { kind: 'foot', text: footText });
+  items.push({ kind: 'sign', flow: !!tpl.signFlow }, { kind: 'foot', text: footText });
   return items;
 }
 
@@ -1260,11 +1260,11 @@ function paginateItems(items, fontStyle) {
     });
   };
 
-  /* 签字区在样式里绝对定位在纸的下方空白区，不占正文流，所以不能用 over() 判断：
-     把它摆进试排页后，看正文底边有没有压到它的顶边，没压到就留在本页 */
-  const placeSign = () => {
+  /* 把签字区摆进试排页；flow 时它参与正文流（随正文上下移动），
+     否则在样式里绝对定位在纸的下方空白区，得看正文底边有没有压到它的顶边 */
+  const placeSign = flow => {
     const box = mk('div');
-    box.innerHTML = signHtml();
+    box.innerHTML = signHtml(flow);
     if (!box.firstElementChild) return null;
     host.appendChild(box.firstElementChild);
     return host.lastElementChild;
@@ -1277,6 +1277,13 @@ function paginateItems(items, fontStyle) {
     }
     return bottom;
   };
+  /* 试排一页条目（末页无页眉），返回是否溢出纸高 —— 供末页签字区回填微调使用 */
+  const renderTrial = list => {
+    host.innerHTML = '';
+    ol = null; olKey = null;
+    list.forEach(x => { x.kind === 'sign' ? placeSign(!!x.flow) : place([x]); });
+    return over();
+  };
 
   host.insertAdjacentHTML('beforeend', headHtml(items[0] && items[0].kind === 'h2' ? items[0].gap : 0));
   items.slice(0, 2).forEach(it => { if (it.kind === 'h2' || it.kind === 'meta') pg.push(it); });
@@ -1284,8 +1291,18 @@ function paginateItems(items, fontStyle) {
   for (let i = 2; i < items.length; i++) {
     const it = items[i];
     if (it.kind === 'foot') continue;   // 页脚 absolute 贴页底，最后统一放到末页
-    if (it.kind === 'sign') {           // 签字区锚在纸的下方空白区，正文压不到就留在本页
-      const signEl = placeSign();
+    if (it.kind === 'sign') {
+      if (it.flow) {                   // 签字区参与正文流：紧贴正文，随正文长度上下移动
+        placeSign(true);
+        if (over()) {                  // 本页余量放不下签字区 → 翻页重排
+          pages.push(pg); pg = []; ol = null; olKey = null;
+          host.innerHTML = '';
+          placeSign(true);
+        }
+        pg.push(it);
+        continue;
+      }
+      const signEl = placeSign();      // 签字区锚在纸的下方空白区，正文压不到就留在本页
       if (signEl && flowBottom() > signEl.getBoundingClientRect().top) {
         pages.push(pg); pg = []; ol = null; olKey = null;
         host.innerHTML = '';
@@ -1316,6 +1333,29 @@ function paginateItems(items, fontStyle) {
     if (paired) i++;
   }
   pages.push(pg);
+
+  /* 正文刚好占满上一页时，紧贴正文的签字区会被顶到末页孤零零占一整页。
+     把上一页末尾的条款回填到末页（直到末页放不下为止），让签字区重新挨着正文 */
+  if (pages.length >= 2) {
+    const last = pages[pages.length - 1];
+    const prev = pages[pages.length - 2];
+    const signItem = last.find(x => x.kind === 'sign' && x.flow);
+    const hasBody = last.some(x => x.kind !== 'sign' && x.kind !== 'foot');
+    if (signItem && !hasBody) {
+      const others = last.filter(x => x !== signItem);
+      const moved = [];                 // 已回填的条目，保持原顺序
+      while (prev.length) {
+        const cand = prev[prev.length - 1];
+        if (cand.kind === 'sign' || cand.kind === 'foot') break;
+        if (renderTrial([cand, ...moved, ...others, signItem])) break;
+        prev.pop();
+        moved.unshift(cand);
+      }
+      while (prev.length && prev[prev.length - 1].kind === 'h3' && moved.length)
+        prev.push(moved.shift());       // 不把节标题孤零零留在上一页页尾
+      if (moved.length) pages[pages.length - 1] = [...moved, ...others, signItem];
+    }
+  }
 
   const out = pages.filter(p => p.length);
   const foot = items.filter(it => it.kind === 'foot');
